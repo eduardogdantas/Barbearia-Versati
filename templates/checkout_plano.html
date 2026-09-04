@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Barbearia — Cadastro de Assinatura</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #000000;
+            --bg-card: #141414;
+            --stroke: #2b2b2b;
+            --text: #f5f5f3;
+            --text-dim: #9a9a97;
+            --brass: #d81f2c;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Work Sans', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .checkout-box {
+            background: var(--bg-card);
+            border: 1px solid var(--stroke);
+            border-radius: 12px;
+            max-width: 500px;
+            width: 100%;
+            padding: 32px;
+        }
+        h1 {
+            font-family: 'Anton', sans-serif;
+            font-size: 2rem;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+            letter-spacing: 0.03em;
+            color: var(--brass);
+        }
+        .plano-summary {
+            background: #1e1e1e;
+            padding: 16px;
+            border-radius: 8px;
+            margin: 16px 0 24px 0;
+            border-left: 4px solid var(--brass);
+        }
+        .plano-summary h3 { font-size: 1.1rem; color: #fff; }
+        .plano-summary p { font-size: 1.2rem; font-weight: bold; color: var(--brass); margin-top: 4px; }
+        
+        .metodos-pagamento {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .btn-tab {
+            flex: 1;
+            padding: 12px;
+            background: #0a0a0a;
+            border: 1px solid var(--stroke);
+            border-radius: 8px;
+            color: var(--text-dim);
+            font-family: 'Work Sans', sans-serif;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .btn-tab.active {
+            background: #1a0809;
+            border-color: var(--brass);
+            color: #fff;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+            text-align: left;
+        }
+        label {
+            display: block;
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+        input {
+            width: 100%;
+            padding: 12px;
+            background: #0a0a0a;
+            border: 1px solid var(--stroke);
+            border-radius: 6px;
+            color: #fff;
+            font-size: 0.95rem;
+            outline: none;
+        }
+        input:focus { border-color: var(--brass); }
+        
+        .row-2 {
+            display: flex;
+            gap: 12px;
+        }
+
+        .btn-confirmar {
+            width: 100%;
+            background: var(--brass);
+            color: #fff;
+            border: none;
+            padding: 14px;
+            border-radius: 8px;
+            font-family: 'Anton', sans-serif;
+            font-size: 1.1rem;
+            text-transform: uppercase;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: filter 0.2s;
+        }
+        .btn-confirmar:hover { filter: brightness(1.1); }
+        .btn-cancelar {
+            display: block;
+            text-align: center;
+            color: var(--text-dim);
+            text-decoration: none;
+            margin-top: 14px;
+            font-size: 0.9rem;
+        }
+
+        .pix-area {
+            display: none;
+            text-align: center;
+            background: #0a0a0a;
+            border: 1px solid var(--stroke);
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 16px;
+        }
+        .pix-area h3 {
+            font-size: 1rem;
+            color: #fff;
+            margin-bottom: 6px;
+        }
+        .pix-area p {
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            margin-bottom: 14px;
+        }
+        .qr-code-img {
+            width: 200px;
+            height: 200px;
+            border-radius: 8px;
+            border: 2px solid var(--brass);
+            margin-bottom: 16px;
+        }
+        .copia-cola-box {
+            display: flex;
+            gap: 8px;
+        }
+        .btn-copiar {
+            background: var(--brass);
+            color: #fff;
+            border: none;
+            padding: 0 16px;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .status-aguardando {
+            display: inline-block;
+            margin-top: 10px;
+            font-size: 0.85rem;
+            color: #ffb703;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="checkout-box">
+        <h1>Finalizar Assinatura</h1>
+        <p style="color: var(--text-dim); font-size: 0.9rem;">Escolha a forma de pagamento abaixo.</p>
+
+        <div class="plano-summary">
+            <h3>{{ plano }}</h3>
+            <p>R$ {{ preco }} / mês</p>
+        </div>
+
+        <div class="metodos-pagamento">
+            <button type="button" class="btn-tab active" id="tabCartao" onclick="alternarMetodo('cartao')">💳 Cartão de Crédito</button>
+            <button type="button" class="btn-tab" id="tabPix" onclick="alternarMetodo('pix')">⚡ Pix</button>
+        </div>
+
+        <!-- Formulário Cartão de Crédito -->
+        <form id="formCartao" onsubmit="concluirAssinaturaCartao(event)">
+            <div class="form-group">
+                <label>Nome do Titular do Cartão</label>
+                <input type="text" id="cartaoNome" value="{{ cliente_nome }}" required placeholder="Como está impresso no cartão">
+            </div>
+
+            <div class="form-group">
+                <label>CPF do Titular</label>
+                <input type="text" id="cartaoCpf" required placeholder="000.000.000-00">
+            </div>
+
+            <div class="form-group">
+                <label>Número do Cartão de Crédito</label>
+                <input type="text" id="cartaoNumero" maxlength="19" required placeholder="0000 0000 0000 0000">
+            </div>
+
+            <div class="row-2">
+                <div class="form-group" style="flex: 2;">
+                    <label>Validade</label>
+                    <input type="text" id="cartaoValidade" placeholder="MM/AA" maxlength="5" required>
+                </div>
+                <div class="form-group" style="flex: 1;">
+                    <label>CVV</label>
+                    <input type="text" id="cartaoCvv" placeholder="123" maxlength="4" required>
+                </div>
+            </div>
+
+            <button type="submit" class="btn-confirmar" id="btnSubmitCartao">Confirmar e Assinar com Cartão</button>
+        </form>
+
+        <!-- Formulário Pix -->
+        <form id="formPix" style="display: none;" onsubmit="gerarPixAssinatura(event)">
+            <div class="form-group">
+                <label>Nome Completo</label>
+                <input type="text" id="pixNome" value="{{ cliente_nome }}" required placeholder="Seu nome completo">
+            </div>
+
+            <div class="form-group">
+                <label>CPF</label>
+                <input type="text" id="pixCpf" required placeholder="000.000.000-00">
+            </div>
+
+            <div class="form-group">
+                <label>E-mail</label>
+                <input type="email" id="pixEmail" required placeholder="seuemail@gmail.com">
+            </div>
+
+            <button type="submit" class="btn-confirmar" id="btnSubmitPix">Gerar QR Code Pix</button>
+        </form>
+
+        <!-- Tela de Exibição do Pix -->
+        <div id="pixArea" class="pix-area">
+            <h3>Escaneie para Pagar</h3>
+            <p>Abra o app do seu banco e leia o QR Code abaixo:</p>
+            
+            <img id="qrCodeImg" class="qr-code-img" src="" alt="QR Code Pix">
+
+            <div class="form-group">
+                <label>Pix Copia e Cola</label>
+                <div class="copia-cola-box">
+                    <input type="text" id="pixCopiaCola" readonly>
+                    <button type="button" class="btn-copiar" onclick="copiarPix()">Copiar</button>
+                </div>
+            </div>
+
+            <span class="status-aguardando" id="statusPix">⏳ Aguardando confirmação do pagamento...</span>
+        </div>
+
+        <a href="/planos" class="btn-cancelar">Voltar aos Planos</a>
+    </div>
+
+    <script>
+        let intervalChecagemPix = null;
+
+        function alternarMetodo(metodo) {
+            const formCartao = document.getElementById('formCartao');
+            const formPix = document.getElementById('formPix');
+            const pixArea = document.getElementById('pixArea');
+            const tabCartao = document.getElementById('tabCartao');
+            const tabPix = document.getElementById('tabPix');
+
+            if (intervalChecagemPix) clearInterval(intervalChecagemPix);
+            pixArea.style.display = 'none';
+
+            if (metodo === 'cartao') {
+                formCartao.style.display = 'block';
+                formPix.style.display = 'none';
+                tabCartao.classList.add('active');
+                tabPix.classList.remove('active');
+            } else {
+                formCartao.style.display = 'none';
+                formPix.style.display = 'block';
+                tabPix.classList.add('active');
+                tabCartao.classList.remove('active');
+            }
+        }
+
+        async function concluirAssinaturaCartao(event) {
+            event.preventDefault();
+
+            const btn = document.getElementById('btnSubmitCartao');
+            btn.disabled = true;
+            btn.innerText = "Processando...";
+
+            const clienteId = "{{ session.get('cliente_id', '') }}";
+            const nomePlano = "{{ plano }}";
+            const preco = parseFloat("{{ preco }}");
+
+            try {
+                const response = await fetch('/api/assinaturas/assinar', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        cliente_id: parseInt(clienteId),
+                        nome_plano: nomePlano,
+                        preco: preco
+                    })
+                });
+
+                const res = await response.json();
+
+                if (response.ok && res.sucesso) {
+                    alert(`Assinatura realizada com sucesso!\nRenovação automática em: ${res.renovacao}`);
+                    window.location.href = "/";
+                } else {
+                    alert(res.mensagem || "Erro ao processar assinatura.");
+                    btn.disabled = false;
+                    btn.innerText = "Confirmar e Assinar com Cartão";
+                }
+            } catch (error) {
+                alert("Erro de conexão ao processar pagamento.");
+                btn.disabled = false;
+                btn.innerText = "Confirmar e Assinar com Cartão";
+            }
+        }
+
+        async function gerarPixAssinatura(event) {
+            event.preventDefault();
+
+            const btn = document.getElementById('btnSubmitPix');
+            btn.disabled = true;
+            btn.innerText = "Gerando Pix...";
+
+            const preco = parseFloat("{{ preco }}");
+
+            const dados = {
+                valor: preco,
+                nome: document.getElementById('pixNome').value,
+                cpf: document.getElementById('pixCpf').value,
+                email: document.getElementById('pixEmail').value
+            };
+
+            try {
+                const response = await fetch('/api/pagamento/pix', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(dados)
+                });
+
+                const res = await response.json();
+
+                if (res.sucesso) {
+                    document.getElementById('formPix').style.display = 'none';
+                    document.getElementById('qrCodeImg').src = res.qr_code_imagem_base64;
+                    document.getElementById('pixCopiaCola').value = res.qr_code_copia_e_cola;
+                    document.getElementById('pixArea').style.display = 'block';
+
+                    // Inicia verificação do status a cada 3 segundos
+                    iniciarChecagemPix(res.pagamento_id);
+                } else {
+                    alert("Erro ao gerar Pix: " + (res.mensagem || "Verifique os dados."));
+                    btn.disabled = false;
+                    btn.innerText = "Gerar QR Code Pix";
+                }
+            } catch (error) {
+                alert("Erro ao conectar com o servidor para gerar o Pix.");
+                btn.disabled = false;
+                btn.innerText = "Gerar QR Code Pix";
+            }
+        }
+
+        function iniciarChecagemPix(pagamentoId) {
+            const clienteId = "{{ session.get('cliente_id', '') }}";
+            const nomePlano = "{{ plano }}";
+            const preco = parseFloat("{{ preco }}");
+
+            intervalChecagemPix = setInterval(async () => {
+                try {
+                    const response = await fetch(`/api/pagamento/status/${pagamentoId}`);
+                    const res = await response.json();
+
+                    if (res.status === 'approved') {
+                        clearInterval(intervalChecagemPix);
+                        document.getElementById('statusPix').innerText = "✅ Pagamento aprovado!";
+                        document.getElementById('statusPix').style.color = "#2ec4b6";
+
+                        // Registra a assinatura no backend do sistema
+                        await fetch('/api/assinaturas/assinar', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                cliente_id: parseInt(clienteId),
+                                nome_plano: nomePlano,
+                                preco: preco
+                            })
+                        });
+
+                        alert("Pagamento Pix confirmado! Sua assinatura foi ativada.");
+                        window.location.href = "/";
+                    }
+                } catch (e) {
+                    console.error("Erro ao verificar status do Pix:", e);
+                }
+            }, 3000);
+        }
+
+        function copiarPix() {
+            const input = document.getElementById('pixCopiaCola');
+            input.select();
+            navigator.clipboard.writeText(input.value);
+            alert("Chave Pix copiada!");
+        }
+    </script>
+</body>
+</html>

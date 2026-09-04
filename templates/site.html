@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Barbearia Versati</title>
+    <!-- Logo na aba do navegador (Favicon) -->
+    <link rel="icon" type="image/jpeg" href="{{ url_for('static', filename='logo_Versati.jpeg') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #000000;
+            --bg-card: #141414;
+            --bg-card-hover: #1a1a1a;
+            --stroke: #2a2a2a;
+            --stroke-hover: #d81f2c;
+            --text: #ffffff;
+            --text-dim: #b0b0ac;
+            --brass: #d81f2c;
+            --green: #2ec4b6;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; scroll-behavior: smooth; }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Work Sans', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        /* Menu Superior Centralizado */
+        header {
+            width: 100%;
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            align-items: center;
+            padding: 15px 40px;
+            border-bottom: 1px solid var(--stroke);
+            background: rgba(0, 0, 0, 0.95);
+            backdrop-filter: blur(10px);
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+        .logo-nav {
+            grid-column: 1;
+            display: flex;
+            align-items: center;
+        }
+        .logo-nav img { height: 35px; width: auto; display: block; }
+        
+        .nav-links { 
+            grid-column: 2;
+            display: flex; 
+            gap: 20px; 
+            align-items: center; 
+            justify-content: center;
+            flex-wrap: nowrap;
+        }
+        .nav-links a {
+            color: var(--text-dim);
+            text-decoration: none;
+            font-size: 0.95rem;
+            font-weight: 500;
+            transition: color 0.2s;
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            line-height: 1;
+        }
+        .nav-links a:hover { color: var(--text); }
+
+        .user-nav-area {
+            grid-column: 3;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+
+        .btn-nav-outline {
+            border: 1px solid var(--stroke) !important;
+            color: var(--text) !important;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-family: 'Anton', sans-serif;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            transition: border-color 0.2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            white-space: nowrap;
+            line-height: 1;
+        }
+        .btn-nav-outline:hover { border-color: var(--text) !important; }
+
+        .btn-user-badge {
+            background: transparent;
+            border: 1px solid var(--stroke);
+            color: var(--text);
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-family: 'Anton', sans-serif;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            white-space: nowrap;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+        }
+
+        /* Seção Principal (Hero) com Botões de Ação na Mesma Linha */
+        .hero {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 70px 20px 40px 20px;
+        }
+        .hero-logo { 
+            height: 95px; 
+            width: 95px; 
+            object-fit: cover; 
+            border-radius: 50%; 
+            border: 2px solid var(--brass);
+            margin-bottom: 20px; 
+        }
+        .hero h1 {
+            font-family: 'Anton', sans-serif;
+            font-size: 2.8rem;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+        }
+        .hero p {
+            color: var(--text-dim);
+            font-size: 1.15rem;
+            margin-bottom: 30px;
+            font-weight: 400;
+        }
+        .hero-buttons {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .btn-hero-red {
+            background: var(--brass);
+            color: #fff;
+            border: none;
+            padding: 14px 24px;
+            border-radius: 8px;
+            font-family: 'Anton', sans-serif;
+            font-size: 1.05rem;
+            text-transform: uppercase;
+            cursor: pointer;
+            text-decoration: none;
+            letter-spacing: 0.03em;
+            transition: filter 0.15s;
+            display: inline-block;
+            text-align: center;
+        }
+        .btn-hero-red:hover { filter: brightness(1.1); }
+
+        .btn-hero-outline {
+            background: transparent;
+            border: 1px solid var(--stroke);
+            color: var(--text);
+            padding: 14px 24px;
+            border-radius: 8px;
+            font-family: 'Anton', sans-serif;
+            font-size: 1.05rem;
+            text-transform: uppercase;
+            cursor: pointer;
+            text-decoration: none;
+            letter-spacing: 0.03em;
+            transition: border-color 0.2s;
+            display: inline-block;
+            text-align: center;
+        }
+        .btn-hero-outline:hover { border-color: var(--text); }
+
+        /* Modal Pop-up para Assinatura e Cartões */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(8px);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+            padding: 20px;
+        }
+        .modal-container {
+            background: var(--bg-card);
+            border: 1px solid var(--stroke);
+            border-radius: 12px;
+            padding: 24px;
+            max-width: 550px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+            position: relative;
+        }
+        .modal-close-btn {
+            position: absolute;
+            top: 15px;
+            right: 20px;
+            background: transparent;
+            border: none;
+            color: var(--text-dim);
+            font-size: 1.5rem;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+        .modal-close-btn:hover { color: var(--brass); }
+
+        /* Estilos dos Cards do Modal */
+        .card-assinatura-box {
+            background: var(--bg);
+            border: 1px solid var(--stroke);
+            border-radius: 10px;
+            padding: 20px;
+            width: 100%;
+            margin-bottom: 20px;
+        }
+        .card-header-ass {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--stroke);
+            padding-bottom: 10px;
+            margin-bottom: 14px;
+        }
+        .card-header-ass h3 {
+            font-family: 'Anton', sans-serif;
+            color: #fff;
+            font-size: 1.2rem;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+        }
+        .badge-status-ass {
+            background: var(--green);
+            color: #000;
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 4px 10px;
+            border-radius: 20px;
+            text-transform: uppercase;
+        }
+        .valor-plano-ass {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--brass);
+            font-family: 'Anton', sans-serif;
+            margin-bottom: 14px;
+        }
+        .datas-info-ass p {
+            font-size: 0.9rem;
+            color: var(--text-dim);
+            margin-bottom: 6px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .datas-info-ass p strong { color: #fff; }
+        .destaque-data-ass { color: var(--green); font-weight: 600; }
+
+        /* Lista de Cartões */
+        .cartao-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--bg-card-hover);
+            border: 1px solid var(--stroke);
+            border-radius: 8px;
+            padding: 10px 14px;
+            margin-bottom: 8px;
+        }
+        .cartao-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .cartao-info img {
+            height: 22px;
+            width: auto;
+        }
+        .cartao-detalhes strong {
+            display: block;
+            font-size: 0.9rem;
+            color: #fff;
+        }
+        .cartao-detalhes span {
+            font-size: 0.78rem;
+            color: var(--text-dim);
+        }
+
+        /* Seção de Produtos */
+        .produtos-section {
+            width: 100%;
+            max-width: 1100px;
+            padding: 80px 20px;
+            text-align: center;
+            border-top: 1px solid var(--stroke);
+        }
+        .section-tag {
+            color: var(--brass);
+            font-family: 'Anton', sans-serif;
+            font-size: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            margin-bottom: 8px;
+        }
+        .produtos-section h2, .sobre-section h2 {
+            font-family: 'Anton', sans-serif;
+            font-size: 2.8rem;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+            letter-spacing: 0.03em;
+        }
+        .produtos-section > p {
+            color: var(--text-dim);
+            font-size: 1.1rem;
+            margin-bottom: 45px;
+        }
+        .produtos-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 280px)); /* Limita a largura máxima do card */
+    gap: 24px;
+    justify-content: center; /* Centraliza os cards na tela */
+    width: 100%;
+    max-width: 1100px;
+    margin: 0 auto;
+}
+        .produto-card {
+            background: var(--bg-card);
+            border: 1px solid var(--stroke);
+            border-radius: 12px;
+            padding: 30px 24px;
+            text-align: left;
+            transition: all 0.3s ease;
+        }
+        .produto-card:hover {
+            border-color: var(--stroke-hover);
+            transform: translateY(-4px);
+            background: var(--bg-card-hover);
+        }
+        .produto-card h3 {
+            font-family: 'Work Sans', sans-serif;
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: var(--text);
+        }
+        .produto-card p {
+            color: var(--text-dim);
+            font-size: 0.95rem;
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+        .produto-footer {
+            display: flex;
+            justify-content: flex-start;
+            align-items: center;
+            border-top: 1px solid var(--stroke);
+            padding-top: 16px;
+        }
+        .produto-preco {
+            font-size: 1.25rem;
+            color: var(--brass);
+            font-weight: 700;
+            font-family: 'Anton', sans-serif;
+            letter-spacing: 0.02em;
+        }
+
+        /* Seção Sobre */
+        .sobre-section {
+            width: 100%;
+            background: var(--bg-card);
+            border-top: 1px solid var(--stroke);
+            padding: 90px 20px;
+            text-align: center;
+        }
+        .sobre-container {
+            max-width: 1000px;
+            margin: 0 auto;
+            text-align: left;
+        }
+        .comodidades-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 15px;
+            margin-bottom: 30px;
+        }
+        .tag {
+            background: var(--bg);
+            border: 1px solid var(--stroke);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            color: var(--text);
+        }
+        .sobre-card-info {
+            background: var(--bg);
+            border: 1px solid var(--stroke);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+        }
+        .sobre-card-info h4 {
+            font-family: 'Anton', sans-serif;
+            font-size: 1.1rem;
+            color: var(--text-dim);
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+        .sobre-card-info p {
+            color: var(--text);
+            font-size: 1.05rem;
+            line-height: 1.6;
+        }
+        .sobre-card-info a {
+            color: var(--text);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        .sobre-card-info a:hover {
+            color: var(--brass);
+            text-decoration: underline;
+        }
+        .horarios-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .horario-linha {
+            display: flex;
+            justify-content: space-between;
+            color: var(--text-dim);
+            font-size: 0.95rem;
+            padding-bottom: 6px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .horario-linha.hoje {
+            color: var(--brass);
+            font-weight: 600;
+        }
+        .pagamentos-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 12px;
+        }
+        .pag-badge {
+            background: var(--bg-card);
+            border: 1px solid var(--stroke);
+            padding: 6px 14px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            color: var(--text);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Menu Superior com Links Centralizados -->
+    <header>
+        <div class="logo-nav">
+            <img src="{{ url_for('static', filename='img/logo_versati.jpeg') }}" alt="Barbearia Versati">
+        </div>
+        <nav class="nav-links">
+            <a href="#produtos">Produtos</a>
+            <a href="#sobre">Sobre</a>
+            <a href="#contato">Contato</a>
+            {% if cliente_id %}
+                <a href="/meus-agendamentos" style="color: var(--brass); font-weight: 600;">Meus Agendamentos</a>
+            {% endif %}
+        </nav>
+        <div class="user-nav-area">
+            {% if cliente_id %}
+                <span class="btn-user-badge">Olá, {{ cliente_nome }}</span>
+                <a href="/sair" class="btn-nav-outline" style="color: #d81f2c !important; border-color: #d81f2c !important; text-decoration: none;">Sair</a>
+            {% else %}
+                <a href="/login" class="btn-nav-outline" style="text-decoration: none;">Entrar</a>
+            {% endif %}
+        </div>
+    </header>
+
+    <!-- Seção Principal (Hero) -->
+    <section class="hero" id="topo-site">
+        <img class="hero-logo" src="{{ url_for('static', filename='img/logo_Versati.jpeg') }}" alt="Barbearia Versati">
+        <h1>Barbearia Versati</h1>
+        <p>Corte, barba e cuidado de verdade — no seu tempo, do seu jeito.</p>
+        
+        <div class="hero-buttons">
+            <a href="/agendar" class="btn-hero-red">Agendar Horário</a>
+            <a href="/planos" class="btn-hero-outline">Planos de Assinatura</a>
+            <a href="https://wa.me/5583986429833" target="_blank" class="btn-hero-outline">Falar no WhatsApp</a>
+            {% if cliente_id %}
+                <!-- Botão Gerenciar Assinatura -->
+                <button onclick="abrirModalAssinatura()" class="btn-hero-outline">💳 Gerenciar Assinatura</button>
+            {% endif %}
+        </div>
+    </section>
+
+    <!-- Modal Pop-Up de Gerenciamento da Assinatura e Cartões -->
+    {% if cliente_id %}
+    <div id="modal-assinatura" class="modal-overlay">
+        <div class="modal-container">
+            <button class="modal-close-btn" onclick="fecharModalAssinatura()">✕</button>
+
+            <!-- Seção 1: Minha Assinatura -->
+            <div id="card-assinatura-container" class="card-assinatura-box" style="display: none;">
+                <div class="card-header-ass">
+                    <h3>Minha Assinatura</h3>
+                    <span class="badge-status-ass">Ativo</span>
+                </div>
+                <div style="font-size: 1.1rem; color: #fff; font-weight: 600; margin-bottom: 6px;" id="assinatura-nome-plano">Carregando plano...</div>
+                <div class="valor-plano-ass" id="assinatura-preco">R$ --,--</div>
+                <div class="datas-info-ass">
+                    <p><strong>Ativo desde:</strong> <span id="assinatura-inicio">--/--/----</span></p>
+                    <p><strong>Próxima Renovação:</strong> <span id="assinatura-renovacao" class="destaque-data-ass">--/--/----</span></p>
+                </div>
+            </div>
+
+            <!-- Caso NÃO possua plano ativo -->
+            <div id="card-sem-assinatura" class="card-assinatura-box" style="display: none; text-align: center;">
+                <h3 style="font-family: 'Anton', sans-serif; font-size: 1.2rem; margin-bottom: 8px;">VOCÊ AINDA NÃO POSSUI UM PLANO</h3>
+                <p style="color: var(--text-dim); font-size: 0.9rem; margin-bottom: 16px;">Assine um plano mensal ilimitado para ter cortes à vontade com descontos exclusivos.</p>
+                <a href="/planos" class="btn-hero-red" style="font-size: 0.9rem; padding: 10px 20px; text-decoration: none;">Conhecer Nossos Planos</a>
+            </div>
+
+            <!-- Seção 2: Meus Cartões Salvos -->
+            <div class="card-assinatura-box" style="margin-bottom: 0;">
+                <div class="card-header-ass">
+                    <h3>Meus Cartões Salvos</h3>
+                    <span style="font-size: 1.2rem;">💳</span>
+                </div>
+                <div id="lista-cartoes-container">
+                    <p style="color: var(--text-dim); font-size: 0.85rem;">Carregando cartões...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Seção de Produtos -->
+    <section class="produtos-section" id="produtos">
+        <div class="section-tag">Exclusivo</div>
+        <h2>Nossos Produtos</h2>
+        <p>Linha profissional de alta performance para cuidados com cabelo e barba em casa.</p>
+        
+        <div class="produtos-grid" id="produtos-grid-container">
+            <p style="color: var(--text-dim);">Carregando produtos...</p>
+        </div>
+    </section>
+
+    <!-- Seção Sobre & Informações da Barbearia -->
+    <section class="sobre-section" id="sobre">
+        <div class="sobre-container">
+            <div class="section-tag">Informações</div>
+            <h2>Sobre a Barbearia</h2>
+
+            <!-- Comodidades -->
+            <div class="sobre-card-info" style="margin-top: 24px;">
+                <h4>Comodidades</h4>
+                <div class="comodidades-tags">
+                    <span class="tag">📶 Wi-Fi</span>
+                    <span class="tag">🚗 Estacionamento</span>
+                    <span class="tag">👶 Aceita crianças</span>
+                </div>
+            </div>
+
+            <!-- Localização -->
+            <div class="sobre-card-info">
+                <h4>Localização</h4>
+                <p>
+                    <a href="https://www.google.com/maps/search/?api=1&query=Rua+Creusa+Campos+de+Vasconcelos+102+Joao+Pessoa+PB" target="_blank" title="Abrir no Google Maps">
+                        📍 Rua Creusa Campos de Vasconcelos, 102, João Pessoa, PB ↗
+                    </a>
+                </p>
+            </div>
+
+            <!-- Horários -->
+            <div class="sobre-card-info" id="contato">
+                <h4>Horário de Atendimento</h4>
+                <div class="horarios-list">
+                    <div class="horario-linha"><span>Segunda-feira</span><span>09:00 – 19:00</span></div>
+                    <div class="horario-linha"><span>Terça-feira</span><span>09:00 – 19:00</span></div>
+                    <div class="horario-linha"><span>Quarta-feira</span><span>09:00 – 19:00</span></div>
+                    <div class="horario-linha"><span>Quinta-feira</span><span>09:00 – 19:00</span></div>
+                    <div class="horario-linha hoje"><span>Sexta-feira (Hoje)</span><span>09:00 – 19:00</span></div>
+                    <div class="horario-linha"><span>Sábado</span><span>09:00 – 19:00</span></div>
+                </div>
+            </div>
+
+            <!-- Pagamento -->
+            <div class="sobre-card-info">
+                <h4>Forma de Pagamento (Aceitos neste local)</h4>
+                <div class="pagamentos-grid">
+                    <span class="pag-badge">Pix</span>
+                    <span class="pag-badge">Cartão de Crédito</span>
+                    <span class="pag-badge">Crédito</span>
+                    <span class="pag-badge">Débito</span>
+                    <span class="pag-badge">Dinheiro</span>
+                    <span class="pag-badge">Pix e Cartão</span>
+                </div>
+            </div>
+
+            <!-- Contato -->
+            <div class="sobre-card-info">
+                <h4>Contato</h4>
+                <p>
+                    <a href="https://wa.me/5583986429833" target="_blank">
+                        💬 5583986429833 ↗
+                    </a>
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Scripts do Modal e APIs -->
+    <script>
+        const clienteId = "{{ cliente_id or '' }}";
+
+        function abrirModalAssinatura() {
+            const modal = document.getElementById('modal-assinatura');
+            if (modal) {
+                modal.style.display = 'flex';
+                carregarMinhaAssinatura();
+                carregarMeusCartoes();
+            }
+        }
+
+        function fecharModalAssinatura() {
+            const modal = document.getElementById('modal-assinatura');
+            if (modal) {
+                modal.style.display = 'none';
+            }
+        }
+
+        window.onclick = function(event) {
+            const modal = document.getElementById('modal-assinatura');
+            if (event.target === modal) {
+                fecharModalAssinatura();
+            }
+        };
+
+        async function carregarMinhaAssinatura() {
+            try {
+                const response = await fetch('/api/minha-assinatura');
+                const data = await response.json();
+
+                const boxAtivo = document.getElementById('card-assinatura-container');
+                const boxSemAssinatura = document.getElementById('card-sem-assinatura');
+
+                if (data.sucesso && data.tem_assinatura) {
+                    document.getElementById('assinatura-nome-plano').innerText = data.assinatura.plano;
+                    document.getElementById('assinatura-preco').innerText = `${data.assinatura.preco} / mês`;
+                    document.getElementById('assinatura-inicio').innerText = data.assinatura.inicio;
+                    document.getElementById('assinatura-renovacao').innerText = data.assinatura.renovacao;
+
+                    boxAtivo.style.display = 'block';
+                    boxSemAssinatura.style.display = 'none';
+                } else {
+                    boxAtivo.style.display = 'none';
+                    boxSemAssinatura.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Erro ao buscar plano ativo:', error);
+            }
+        }
+
+        async function carregarMeusCartoes() {
+            const container = document.getElementById('lista-cartoes-container');
+            try {
+                const response = await fetch('/api/meus-cartoes');
+                const data = await response.json();
+
+                if (data.sucesso && data.cartoes && data.cartoes.length > 0) {
+                    container.innerHTML = '';
+                    data.cartoes.forEach(cartao => {
+                        const html = `
+                            <div class="cartao-item">
+                                <div class="cartao-info">
+                                    ${cartao.thumb ? `<img src="${cartao.thumb}" alt="${cartao.bandeira}">` : '💳'}
+                                    <div class="cartao-detalhes">
+                                        <strong>${cartao.bandeira.toUpperCase()} **** ${cartao.ultimos_digitos}</strong>
+                                        <span>Validade: ${cartao.exp_mes}/${cartao.exp_ano}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                        container.innerHTML += html;
+                    });
+                } else {
+                    container.innerHTML = '<p style="color: var(--text-dim); font-size: 0.85rem;">Nenhum cartão salvo para pagamentos recorrentes.</p>';
+                }
+            } catch (error) {
+                console.error('Erro ao buscar cartões:', error);
+                container.innerHTML = '<p style="color: var(--text-dim); font-size: 0.85rem;">Não foi possível carregar os cartões.</p>';
+            }
+        }
+    </script>
+    <script>
+        
+        async function carregarProdutosWeb() {
+            const container = document.getElementById('produtos-grid-container');
+            if (!container) return;
+
+            try {
+                // Rota que já existe no seu app.py para gerenciar/listar produtos
+                const response = await fetch('/api/produtos');
+                const data = await response.json();
+
+                if (data.sucesso && data.produtos && data.produtos.length > 0) {
+                    container.innerHTML = '';
+                    data.produtos.forEach(prod => {
+                        // Formata o preço para o padrão brasileiro (R$ 0,00)
+                        const precoFormatado = Number(prod.preco).toLocaleString('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL'
+                        });
+
+                        const cardHtml = `
+    <div class="produto-card">
+        <div>
+            <h3>${prod.nome}</h3>
+            <p>${prod.descricao || 'Cuidados profissionais para cabelo e barba.'}</p>
+        </div>
+        <div class="produto-footer">
+            <span class="produto-preco">${precoFormatado}</span>
+        </div>
+    </div>
+`;
+                        container.innerHTML += cardHtml;
+                    });
+                } else {
+                    container.innerHTML = '<p style="color: var(--text-dim);">Nenhum produto cadastrado no momento.</p>';
+                }
+            } catch (error) {
+                console.error("Erro ao carregar produtos:", error);
+                container.innerHTML = '<p style="color: var(--brass);">Erro ao carregar os produtos do servidor.</p>';
+            }
+        }
+
+        // Executa a função assim que a página é aberta
+        document.addEventListener("DOMContentLoaded", () => {
+            carregarProdutosWeb();
+        });
+    </script>
+</body>
+</html>

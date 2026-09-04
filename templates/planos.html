@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Barbearia — Planos de Assinatura</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #000000;
+            --bg-card: #141414;
+            --bg-card-hover: #1a1a1a;
+            --stroke: #2b2b2b;
+            --stroke-hover: #d81f2c;
+            --text: #f5f5f3;
+            --text-dim: #9a9a97;
+            --brass: #d81f2c;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Work Sans', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 20px;
+        }
+        .container {
+            max-width: 1100px;
+            width: 100%;
+            text-align: center;
+        }
+        h1 {
+            font-family: 'Anton', sans-serif;
+            font-size: 2.8rem;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            letter-spacing: 0.03em;
+        }
+        p.subtitle { 
+            color: var(--text-dim); 
+            margin-bottom: 40px; 
+            font-size: 1.1rem; 
+        }
+        .plans-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 24px;
+            margin-bottom: 40px;
+        }
+        .plan-card {
+            background: var(--bg-card);
+            border: 1px solid var(--stroke);
+            border-radius: 12px;
+            padding: 30px 24px;
+            text-align: left;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            transition: all 0.3s ease;
+        }
+        .plan-card:hover {
+            border-color: var(--stroke-hover);
+            transform: translateY(-4px);
+            background: var(--bg-card-hover);
+        }
+        .plan-card h3 {
+            font-family: 'Anton', sans-serif;
+            font-size: 1.4rem;
+            color: var(--text);
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.02em;
+        }
+        .plan-desc {
+            font-size: 0.95rem;
+            color: var(--text-dim);
+            margin-bottom: 24px;
+            line-height: 1.5;
+            flex-grow: 1;
+        }
+        .plan-footer {
+            border-top: 1px solid var(--stroke);
+            padding-top: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .preco {
+            font-family: 'Anton', sans-serif;
+            font-size: 1.4rem;
+            color: var(--brass);
+            letter-spacing: 0.02em;
+        }
+        .btn-assinar {
+            background: var(--brass);
+            color: #fff;
+            border: none;
+            padding: 12px;
+            border-radius: 8px;
+            font-family: 'Anton', sans-serif;
+            font-size: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            cursor: pointer;
+            text-align: center;
+            transition: filter 0.15s;
+        }
+        .btn-assinar:hover { filter: brightness(1.1); }
+        
+        .btn-voltar {
+            background: transparent;
+            color: var(--text);
+            border: 1px solid var(--stroke);
+            padding: 14px 28px;
+            border-radius: 8px;
+            font-family: 'Anton', sans-serif;
+            font-size: 1.05rem;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            transition: border-color 0.2s;
+        }
+        .btn-voltar:hover { border-color: var(--text); }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Planos de Assinatura</h1>
+        <p class="subtitle">Escolha o plano ideal para cuidar do seu visual todo mês.</p>
+        
+        <div class="plans-grid">
+            <!-- Plano 1 -->
+            <div class="plan-card">
+                <div>
+                    <h3>Plano Corte + Barba Ilimitado</h3>
+                    <div class="plan-desc">Cabelo + barba ilimitado durante o mês inteiro.</div>
+                </div>
+                <div class="plan-footer">
+                    <span class="preco">R$ 149,90/mês</span>
+                    <button class="btn-assinar" onclick="assinarPlano('Plano Corte + Barba Ilimitado', 149.90)">Assinar agora</button>
+                </div>
+            </div>
+
+            <!-- Plano 2 -->
+            <div class="plan-card">
+                <div>
+                    <h3>Plano Corte Ilimitado Premium</h3>
+                    <div class="plan-desc">Cortes ilimitados, qualquer dia da semana!</div>
+                </div>
+                <div class="plan-footer">
+                    <span class="preco">R$ 99,90/mês</span>
+                    <button class="btn-assinar" onclick="assinarPlano('Plano Corte Ilimitado Premium', 99.90)">Assinar agora</button>
+                </div>
+            </div>
+
+            <!-- Plano 3 -->
+            <div class="plan-card">
+                <div>
+                    <h3>Plano Corte Ilimitado Básico</h3>
+                    <div class="plan-desc">Corte quantas vezes quiser de segunda a quarta!</div>
+                </div>
+                <div class="plan-footer">
+                    <span class="preco">R$ 79,90/mês</span>
+                    <button class="btn-assinar" onclick="assinarPlano('Plano Corte Ilimitado Básico', 79.90)">Assinar agora</button>
+                </div>
+            </div>
+
+            <!-- Plano 4 -->
+            <div class="plan-card">
+                <div>
+                    <h3>Plano Barba Ilimitado</h3>
+                    <div class="plan-desc">Faça a barba até 1 vez por semana com prioridade.</div>
+                </div>
+                <div class="plan-footer">
+                    <span class="preco">R$ 99,90/mês</span>
+                    <button class="btn-assinar" onclick="assinarPlano('Plano Barba Ilimitado', 99.90)">Assinar agora</button>
+                </div>
+            </div>
+        </div>
+
+        <a href="/" class="btn-voltar">Voltar ao Início</a>
+    </div>
+
+    <script>
+        function assinarPlano(nomePlano, preco) {
+            const clienteId = "{{ session.get('cliente_id', '') }}";
+            
+            if (!clienteId) {
+                alert("Por favor, faça login na sua conta para contratar um plano!");
+                window.location.href = "/login";
+                return;
+            }
+
+            // Redireciona diretamente para o formulário de cadastro do cartão de crédito
+            const planoEncoded = encodeURIComponent(nomePlano);
+            window.location.href = `/checkout-plano?plano=${planoEncoded}&preco=${preco}`;
+        }
+    </script>
+</body>
+</html>
