@@ -7,7 +7,7 @@ import 'dart:convert';
 // CONFIGURAÇÃO CENTRAL DA API
 // ==============================================================================
 class AppConfig {
-  static const String baseUrl = 'http://192.168.0.16:5000';
+  static const String baseUrl = 'http://192.168.0.26:5000';
   static const String apiUrl = '$baseUrl/api';
 }
 
@@ -453,7 +453,7 @@ class _MainMultiTaskScreenState extends State<MainMultiTaskScreen> {
   @override
   Widget build(BuildContext context) {
     final List<Widget> paginas = [
-      const AgendaProfissionalScreen(),         // 0: Agenda
+      const AgendaProfissionalScreen(),        // 0: Agenda
       FinanceiroView(key: _financeiroKey),       // 1: Financeiro Integrado
       const SizedBox.shrink(),                   // 2: Gerenciar (Modal)
       const ConfiguracoesView(),                 // 3: Configuração
@@ -825,10 +825,6 @@ class _HistoricoAtendimentosScreenState extends State<HistoricoAtendimentosScree
   }
 }
 
-// ==============================================================================
-// ABA DE FINANCEIRO INTEGRADA
-// ==============================================================================
-
 class FinanceiroView extends StatefulWidget {
   const FinanceiroView({super.key});
 
@@ -857,6 +853,7 @@ class _FinanceiroViewState extends State<FinanceiroView> {
     super.initState();
     _carregarDados(manual: true);
 
+    // Atualização em tempo real a cada 5 segundos de forma silenciosa
     _timerTempoReal = Timer.periodic(const Duration(seconds: 5), (_) {
       _carregarDados(manual: false);
     });
@@ -927,7 +924,13 @@ class _FinanceiroViewState extends State<FinanceiroView> {
                           children: [
                             const Icon(Icons.check_circle_outline, color: Colors.greenAccent, size: 16),
                             const SizedBox(width: 6),
-                            Text('VALOR TOTAL EM CORTES FINALIZADOS', style: TextStyle(color: _textSecondary, fontSize: 11, fontWeight: FontWeight.bold)),
+                            Expanded(
+                              child: Text(
+                                'VALOR TOTAL EM CORTES FINALIZADOS',
+                                style: TextStyle(color: _textSecondary, fontSize: 11, fontWeight: FontWeight.bold),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
                           ],
                         ),
                         const SizedBox(height: 8),
@@ -937,7 +940,7 @@ class _FinanceiroViewState extends State<FinanceiroView> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Soma de todos los atendimentos marcados como concluídos, pelo preço cadastrado de cada serviço.',
+                          'Soma de todos os atendimentos marcados como concluídos.',
                           style: TextStyle(color: _textSecondary, fontSize: 10),
                         ),
                       ],
@@ -978,11 +981,6 @@ class _FinanceiroViewState extends State<FinanceiroView> {
                               ),
                           ],
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Soma de todos os planos com status Ativo no banco de dados.',
-                          style: TextStyle(color: _textSecondary, fontSize: 10),
-                        ),
                       ],
                     ),
                   ),
@@ -1019,11 +1017,22 @@ class _FinanceiroViewState extends State<FinanceiroView> {
                   ),
                   const SizedBox(height: 24),
 
+                  // CORREÇÃO DO OVERFLOW AQUI (Envolvido em Expanded e Flexible)
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Cortes Finalizados & Lançamentos', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                      Text('${_finalizados.length} concluídos', style: const TextStyle(color: Colors.greenAccent, fontSize: 12)),
+                      Expanded(
+                        child: const Text(
+                          'Cortes Finalizados',
+                          style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${_finalizados.length} concluídos',
+                        style: const TextStyle(color: Colors.greenAccent, fontSize: 12),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 12),
@@ -1137,26 +1146,33 @@ class _FinanceiroViewState extends State<FinanceiroView> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              const Icon(Icons.check_circle_outline, color: Colors.greenAccent, size: 22),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '${item['cliente_nome'] ?? 'Cliente'} - ${item['servico'] ?? 'Corte'}',
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+          Expanded(
+            child: Row(
+              children: [
+                const Icon(Icons.check_circle_outline, color: Colors.greenAccent, size: 22),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${item['cliente_nome'] ?? 'Cliente'} - ${item['servico'] ?? 'Corte'}',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${item['horario'] ?? '--:--'} • Barbeiro: ${item['profissional'] ?? 'Atendente'}',
+                        style: const TextStyle(color: Colors.white54, fontSize: 11),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '${item['horario'] ?? '--:--'} • Barbeiro: ${item['profissional'] ?? 'Atendente'}',
-                    style: const TextStyle(color: Colors.white54, fontSize: 11),
-                  ),
-                ],
-              ),
-            ],
+                ),
+              ],
+            ),
           ),
+          const SizedBox(width: 8),
           Text(
             item['valor'] ?? 'R\$ 35,00',
             style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 14),
@@ -2213,7 +2229,7 @@ class _GerenciarPacotesScreenState extends State<GerenciarPacotesScreen> {
 }
 
 // ==============================================================================
-// GERENCIAR ASSINATURAS
+// GERENCIAR ASSINATURAS (CORRIGIDO)
 // ==============================================================================
 
 class GerenciarAssinaturasScreen extends StatefulWidget {
@@ -2231,7 +2247,9 @@ class _GerenciarAssinaturasScreenState extends State<GerenciarAssinaturasScreen>
   final String _apiUrl = '${AppConfig.apiUrl}/admin/planos-ativos';
 
   List<dynamic> _planos = [];
+  List<dynamic> _planosFiltrados = [];
   bool _isLoading = true;
+  String? _dataFiltro; // Formato YYYY-MM-DD
 
   @override
   void initState() {
@@ -2249,6 +2267,7 @@ class _GerenciarAssinaturasScreenState extends State<GerenciarAssinaturasScreen>
         final data = jsonDecode(response.body);
         setState(() {
           _planos = data['planos'] ?? [];
+          _aplicarFiltroData();
           _isLoading = false;
         });
       } else {
@@ -2260,7 +2279,52 @@ class _GerenciarAssinaturasScreenState extends State<GerenciarAssinaturasScreen>
     }
   }
 
-  // Função para chamar a API de cancelamento
+  void _aplicarFiltroData() {
+    if (_dataFiltro == null || _dataFiltro!.isEmpty) {
+      _planosFiltrados = List.from(_planos);
+    } else {
+      _planosFiltrados = _planos.where((p) {
+        String validade = (p['validade'] ?? '').toString();
+        String criadoEm = (p['criado_em'] ?? '').toString(); 
+        return validade.contains(_dataFiltro!) || criadoEm.contains(_dataFiltro!);
+      }).toList();
+    }
+  }
+
+  Future<void> _selecionarDataFiltro() async {
+    DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime(2023),
+      lastDate: DateTime(2030),
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.dark().copyWith(
+            colorScheme: ColorScheme.dark(
+              primary: _brandRed,
+              onSurface: Colors.white,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        _dataFiltro = "${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}";
+        _aplicarFiltroData();
+      });
+    }
+  }
+
+  void _limparFiltro() {
+    setState(() {
+      _dataFiltro = null;
+      _planosFiltrados = List.from(_planos);
+    });
+  }
+
   Future<void> _cancelarAssinaturaAPI(int assinaturaId) async {
     try {
       final response = await http.post(
@@ -2276,10 +2340,10 @@ class _GerenciarAssinaturasScreenState extends State<GerenciarAssinaturasScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('🚫 Assinatura cancelada com sucesso!'), backgroundColor: Colors.orange),
         );
-        _carregarPlanos(); // Recarrega a lista
+        _carregarPlanos(); 
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('❌ ${resData['mensagem'] ?? 'Erro ao cancelar assinatura.'}'), backgroundColor: Colors.red),
+          SnackBar(content: Text('❌ ${resData['mensagem'] ?? 'Erro ao cancelar.'}'), backgroundColor: Colors.red),
         );
       }
     } catch (e) {
@@ -2290,37 +2354,22 @@ class _GerenciarAssinaturasScreenState extends State<GerenciarAssinaturasScreen>
     }
   }
 
-  // Diálogo de confirmação antes de cancelar
-  void _confirmarCancelamento(int assinaturaId, String nomeCliente) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: _cardDark,
-        title: const Text('CANCELAR ASSINATURA', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-        content: Text(
-          'Deseja realmente cancelar a assinatura do cliente $nomeCliente? Essa ação mudará o status para inativo.',
-          style: TextStyle(color: _textSecondary, fontSize: 13),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Voltar', style: TextStyle(color: Colors.grey)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: _brandRed),
-            onPressed: () {
-              Navigator.pop(ctx);
-              _cancelarAssinaturaAPI(assinaturaId);
-            },
-            child: const Text('Sim, Cancelar', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
+    int ativos = _planosFiltrados.where((p) => (p['status'] ?? '').toString().toLowerCase() == 'ativo').length;
+    int vencidos = _planosFiltrados.where((p) => (p['status'] ?? '').toString().toLowerCase() == 'vencido').length;
+    int cancelados = _planosFiltrados.where((p) {
+      String st = (p['status'] ?? '').toString().toLowerCase();
+      return st == 'inativo' || st == 'cancelado';
+    }).length;
+    
+    double totalValor = _planosFiltrados.fold(0.0, (sum, p) {
+      if ((p['status'] ?? '').toString().toLowerCase() == 'ativo') {
+        return sum + (double.tryParse('${p['preco']}') ?? 0.0);
+      }
+      return sum;
+    });
+
     return Scaffold(
       backgroundColor: const Color(0xFF000000),
       appBar: AppBar(
@@ -2333,122 +2382,227 @@ class _GerenciarAssinaturasScreenState extends State<GerenciarAssinaturasScreen>
       ),
       body: _isLoading
           ? Center(child: CircularProgressIndicator(color: _brandRed))
-          : _planos.isEmpty
-              ? Center(
-                  child: Text('Nenhuma assinatura registrada.', style: TextStyle(color: _textSecondary)),
-                )
-              : RefreshIndicator(
-                  onRefresh: _carregarPlanos,
-                  color: _brandRed,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _planos.length,
-                    itemBuilder: (context, index) {
-                      final p = _planos[index];
-                      
-                      String statusBanco = (p['status'] ?? 'ativo').toString().toLowerCase();
-                      bool isAtivo = statusBanco == 'ativo' || statusBanco == 'active';
-                      
-                      Color corStatus = isAtivo ? Colors.greenAccent : _brandRed;
-                      Color corBorda = isAtivo ? Colors.green.withOpacity(0.25) : _brandRed.withOpacity(0.4);
-                      String textoStatus = isAtivo ? 'ATIVO' : 'INATIVO / CANCELADO';
-                      IconData iconeStatus = isAtivo ? Icons.check_circle : Icons.block;
-
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: _cardDark,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: corBorda),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+          : RefreshIndicator(
+              onRefresh: _carregarPlanos,
+              color: _brandRed,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: _cardDark,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.white10),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        p['cliente_nome'] ?? 'Cliente',
-                                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        p['cliente_email'] ?? '',
-                                        style: TextStyle(color: _textSecondary, fontSize: 12),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                  decoration: BoxDecoration(
-                                    color: corStatus.withOpacity(0.15),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(iconeStatus, color: corStatus, size: 14),
-                                      const SizedBox(width: 4),
-                                      Text(textoStatus, style: TextStyle(color: corStatus, fontSize: 10, fontWeight: FontWeight.bold)),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const Divider(color: Colors.white10, height: 20),
+                            const Text('Resumo Geral', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
                             Row(
                               children: [
-                                Icon(Icons.card_membership, color: _brandRed, size: 18),
-                                const SizedBox(width: 8),
-                                Text(
-                                  p['nome'] ?? 'Plano',
-                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
-                                ),
-                                const Spacer(),
-                                Text(
-                                  'R\$ ${(double.tryParse('${p['preco']}') ?? 0).toStringAsFixed(2).replaceAll('.', ',')}',
-                                  style: TextStyle(color: _brandRed, fontWeight: FontWeight.bold, fontSize: 14),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  isAtivo ? 'Ativo até ${p['validade']}' : 'Assinatura cancelada ou inativa',
-                                  style: TextStyle(color: isAtivo ? _textSecondary : _brandRed, fontSize: 12),
-                                ),
-                                if (isAtivo)
-                                  InkWell(
-                                    onTap: () => _confirmarCancelamento(p['id'], p['cliente_nome'] ?? 'Cliente'),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                      decoration: BoxDecoration(
-                                        color: _brandRed.withOpacity(0.15),
-                                        borderRadius: BorderRadius.circular(6),
-                                        border: Border.all(color: _brandRed, width: 0.8),
-                                      ),
-                                      child: const Text(
-                                        'CANCELAR',
-                                        style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                                      ),
+                                if (_dataFiltro != null)
+                                  IconButton(
+                                    icon: const Icon(Icons.clear, color: Colors.redAccent, size: 18),
+                                    onPressed: _limparFiltro,
+                                    tooltip: 'Limpar Filtro',
+                                  ),
+                                InkWell(
+                                  onTap: _selecionarDataFiltro,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: _brandRed.withOpacity(0.2),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: _brandRed),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.calendar_today, color: Colors.white, size: 12),
+                                        const SizedBox(width: 4),
+                                        Text(_dataFiltro ?? 'Filtrar Data', style: const TextStyle(color: Colors.white, fontSize: 11)),
+                                      ],
                                     ),
                                   ),
+                                ),
                               ],
                             ),
                           ],
                         ),
-                      );
-                    },
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            _buildDashCard('Ativos', '$ativos', Colors.greenAccent),
+                            const SizedBox(width: 8),
+                            _buildDashCard('Vencidos', '$vencidos', Colors.orangeAccent),
+                            const SizedBox(width: 8),
+                            _buildDashCard('Cancelados', '$cancelados', _brandRed),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.black,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.white12),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('Total Planos Ativos:', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                              Text('R\$ ${totalValor.toStringAsFixed(2).replaceAll('.', ',')}', style: TextStyle(color: _brandRed, fontWeight: FontWeight.bold, fontSize: 14)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 20),
+                  const Text('Lista de Assinaturas', style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 10),
+                  _planosFiltrados.isEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.only(top: 40),
+                          child: Center(
+                            child: Text('Nenhuma assinatura encontrada para este filtro.', style: TextStyle(color: _textSecondary)),
+                          ),
+                        )
+                      : ListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: _planosFiltrados.length,
+                          itemBuilder: (context, index) {
+                            final p = _planosFiltrados[index];
+                            
+                            String statusBanco = (p['status'] ?? 'ativo').toString().toLowerCase();
+                            bool isAtivo = statusBanco == 'ativo' || statusBanco == 'active';
+                            
+                            Color corStatus = isAtivo ? Colors.greenAccent : _brandRed;
+                            Color corBorda = isAtivo ? Colors.green.withOpacity(0.25) : _brandRed.withOpacity(0.4);
+                            String textoStatus = isAtivo ? 'ATIVO' : 'CANCELADO / INATIVO';
+                            IconData iconeStatus = isAtivo ? Icons.check_circle : Icons.block;
+
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: _cardDark,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: corBorda),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              p['cliente_nome'] ?? 'Cliente',
+                                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              p['cliente_email'] ?? '',
+                                              style: TextStyle(color: _textSecondary, fontSize: 12),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                        decoration: BoxDecoration(
+                                          color: corStatus.withOpacity(0.15),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(iconeStatus, color: corStatus, size: 14),
+                                            const SizedBox(width: 4),
+                                            Text(textoStatus, style: TextStyle(color: corStatus, fontSize: 10, fontWeight: FontWeight.bold)),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const Divider(color: Colors.white10, height: 20),
+                                  Row(
+                                    children: [
+                                      Icon(Icons.card_membership, color: _brandRed, size: 18),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        p['nome'] ?? 'Plano',
+                                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
+                                      ),
+                                      const Spacer(),
+                                      Text(
+                                        'R\$ ${(double.tryParse('${p['preco']}') ?? 0).toStringAsFixed(2).replaceAll('.', ',')}',
+                                        style: TextStyle(color: _brandRed, fontWeight: FontWeight.bold, fontSize: 14),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        isAtivo ? 'Ativo até ${p['validade'] ?? '--/--/----'}' : 'Assinatura cancelada',
+                                        style: TextStyle(color: isAtivo ? _textSecondary : _brandRed, fontSize: 12),
+                                      ),
+                                      if (isAtivo)
+                                        InkWell(
+                                          onTap: () => _cancelarAssinaturaAPI(p['id']),
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: _brandRed.withOpacity(0.15),
+                                              borderRadius: BorderRadius.circular(6),
+                                              border: Border.all(color: _brandRed, width: 0.8),
+                                            ),
+                                            child: const Text(
+                                              'CANCELAR',
+                                              style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                ],
+              ),
+            ),
+    );
+  }
+
+  Widget _buildDashCard(String titulo, String valor, Color cor) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        decoration: BoxDecoration(
+          color: Colors.black,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.white12),
+        ),
+        child: Column(
+          children: [
+            Text(titulo, style: const TextStyle(color: Colors.grey, fontSize: 11)),
+            const SizedBox(height: 4),
+            Text(valor, style: TextStyle(color: cor, fontWeight: FontWeight.bold, fontSize: 16)),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -2898,10 +3052,6 @@ class _AgendaDetalhesScreenState extends State<AgendaDetalhesScreen> {
   }
 }
 
-// ==============================================================================
-// TELA PRINCIPAL DA AGENDA DA EQUIPE
-// ==============================================================================
-
 class AgendaProfissionalScreen extends StatefulWidget {
   const AgendaProfissionalScreen({super.key});
 
@@ -2987,26 +3137,28 @@ class _AgendaProfissionalScreenState extends State<AgendaProfissionalScreen> {
         elevation: 0,
         title: Row(
           children: [
-            Icon(Icons.event_seat, color: _brandRed, size: 22),
-            const SizedBox(width: 10),
-            const Text(
-              'AGENDA DA EQUIPE',
-              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+            Icon(Icons.event_seat, color: _brandRed, size: 20),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                'AGENDA',
+                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ],
         ),
         actions: [
           IconButton(
-            icon: Icon(Icons.calendar_month, color: _brandRed),
+            icon: Icon(Icons.calendar_month, color: _brandRed, size: 22),
             tooltip: 'Selecionar Data',
             onPressed: () => _selecionarData(context),
           ),
           IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.white70),
+            icon: const Icon(Icons.refresh, color: Colors.white70, size: 22),
             tooltip: 'Atualizar Agenda',
             onPressed: _carregarAgendaGeral,
           ),
-          const SizedBox(width: 4),
         ],
       ),
       body: _isLoading

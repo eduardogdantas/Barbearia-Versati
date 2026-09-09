@@ -301,15 +301,20 @@
             const nomePlano = "{{ plano }}";
             const preco = parseFloat("{{ preco }}");
 
+            const dadosCartao = {
+                cliente_id: parseInt(clienteId),
+                nome_plano: nomePlano,
+                valor: preco,
+                cpf: document.getElementById('cartaoCpf').value,
+                // Nota: Em produção com Mercado Pago, o ideal é usar o SDK front-end para gerar um token seguro. 
+                // Nos testes com cartão de sandbox, certifique-se de enviar os dados que sua API espera.
+            };
+
             try {
-                const response = await fetch('/api/assinaturas/assinar', {
+                const response = await fetch('/api/pagamento/cartao', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        cliente_id: parseInt(clienteId),
-                        nome_plano: nomePlano,
-                        preco: preco
-                    })
+                    body: JSON.stringify(dadosCartao)
                 });
 
                 const res = await response.json();
@@ -318,7 +323,7 @@
                     alert(`Assinatura realizada com sucesso!\nRenovação automática em: ${res.renovacao}`);
                     window.location.href = "/";
                 } else {
-                    alert(res.mensagem || "Erro ao processar assinatura.");
+                    alert(res.mensagem || "Erro ao processar pagamento com cartão.");
                     btn.disabled = false;
                     btn.innerText = "Confirmar e Assinar com Cartão";
                 }

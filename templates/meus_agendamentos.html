@@ -128,6 +128,70 @@
             transition: border-color 0.2s;
         }
         .btn-voltar:hover { border-color: var(--text); }
+
+        /* Estilo do Modal Customizado */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-box {
+            background: var(--bg-card);
+            border: 1px solid var(--stroke);
+            padding: 28px;
+            border-radius: 12px;
+            max-width: 400px;
+            width: 90%;
+            text-align: center;
+        }
+        .modal-box h3 {
+            font-family: 'Anton', sans-serif;
+            font-size: 1.4rem;
+            text-transform: uppercase;
+            color: var(--text);
+            margin-bottom: 10px;
+        }
+        .modal-box p {
+            color: var(--text-dim);
+            font-size: 0.9rem;
+            margin-bottom: 24px;
+        }
+        .modal-botoes {
+            display: flex;
+            gap: 10px;
+        }
+        .modal-btn-voltar {
+            flex: 1;
+            padding: 12px;
+            background: transparent;
+            border: 1px solid var(--stroke);
+            color: var(--text);
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: 'Work Sans', sans-serif;
+        }
+        .modal-btn-voltar:hover { background: var(--stroke); }
+        .modal-btn-confirmar {
+            flex: 1;
+            padding: 12px;
+            background: var(--brass);
+            border: none;
+            color: #fff;
+            border-radius: 8px;
+            cursor: pointer;
+            font-family: 'Anton', sans-serif;
+            font-size: 1rem;
+            text-transform: uppercase;
+        }
+        .modal-btn-confirmar:hover { filter: brightness(1.1); }
     </style>
 </head>
 <body>
@@ -148,9 +212,8 @@
                             <div class="dia">{{ ag.data }}</div>
                             <div class="hora">🕒 {{ ag.horario }}</div>
                         </div>
-                        <form action="/cancelar-agendamento/{{ ag.id }}" method="POST" onsubmit="return confirm('Tem certeza que deseja cancelar este agendamento?');">
-                            <button type="submit" class="btn-cancelar">Cancelar</button>
-                        </form>
+                        <!-- Botão que aciona o modal customizado -->
+                        <button type="button" class="btn-cancelar" onclick="abrirModal('{{ ag.id }}')">Cancelar</button>
                     </div>
                 </div>
             {% endfor %}
@@ -163,5 +226,33 @@
         <a href="/" class="btn-voltar">Voltar ao Início</a>
     </div>
 
+    <!-- Estrutura HTML do Modal -->
+    <div id="modalCancelar" class="modal-overlay">
+        <div class="modal-box">
+            <h3>Cancelar Atendimento</h3>
+            <p>Tem certeza que deseja cancelar este agendamento? Esta ação liberará o horário para outros clientes.</p>
+            <div class="modal-botoes">
+                <button type="button" class="modal-btn-voltar" onclick="fecharModal()">Voltar</button>
+                <form id="formCancelar" method="POST" style="flex: 1;">
+                    <button type="submit" class="modal-btn-confirmar" style="width: 100%;">Sim, Cancelar</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let idAgendamentoAtual = null;
+
+        function abrirModal(id) {
+            idAgendamentoAtual = id;
+            document.getElementById('formCancelar').action = `/cancelar-agendamento/${id}`;
+            document.getElementById('modalCancelar').style.display = 'flex';
+        }
+
+        function fecharModal() {
+            idAgendamentoAtual = null;
+            document.getElementById('modalCancelar').style.display = 'none';
+        }
+    </script>
 </body>
 </html>

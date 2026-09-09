@@ -52,6 +52,71 @@ app.secret_key = os.environ.get(
 )
 CORS(app)
 
+@app.route("/api/pagamento/cartao", methods=["POST"])
+def processar_pagamento_cartao():
+    dados = request.get_json() or {}
+
+    valor = float(dados.get("valor", 0.00))
+    nome_plano = dados.get("nome_plano", "Plano Barbearia")
+    cliente_id = dados.get("cliente_id") or session.get("cliente_id")
+    
+    # Dados do cartão enviados pelo front-end
+    token_cartao = dados.get("token") # Se estiver usando o MercadoPago.js para tokenizar
+    email = dados.get("email", f"comprador_teste_{uuid.uuid4().hex[:6]}@gmail.com")
+    cpf = re.sub(r"\D", "", str(dados.get("cpf", "70069889422")))
+    
+    payment_data = {
+        "transaction_amount": valor,
+        "description": f"Assinatura {nome_plano} - Barbearia Versati",
+        "payment_method_id": "master", # Ou visa, dependendo do teste
+        "token": token_cartao,
+        "installments": 1,
+        "payer": {
+            "email": email,
+            "identification": {"type": "CPF", "number": cpf}
+        },
+        "metadata": {
+            "cliente_id": cliente_id,
+            "nome_plano": nome_plano,
+            "preco": valor
+        }
+    }
+
+    try:
+        payment_response = sdk.payment().create(payment_data)
+        payment = payment_response.get("response", {})
+
+        if payment_response.get("status") in [200, 201] and payment.get("status") == "approved":
+            # Ativa a assinatura direto no banco se aprovado
+            data_inicio = datetime.now().date()
+            data_renovacao = data_inicio + timedelta(days=30)
+            
+            conn = get_db_connection()
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        "INSERT INTO assinaturas (cliente_id, nome_plano, preco, status, data_inicio, data_renovacao) VALUES (%s, %s, %s, 'ativo', %s, %s)",
+                        (cliente_id, nome_plano, valor, data_inicio, data_renovacao)
+                    )
+                    conn.commit()
+            finally:
+                conn.close()
+
+            return jsonify({
+                "sucesso": True, 
+                "mensagem": "Pagamento aprovado!",
+                "renovacao": data_renovacao.strftime("%d/%m/%Y")
+            }), 200
+        else:
+            return jsonify({
+                "sucesso": False, 
+                "mensagem": "Pagamento recusado pelo gateway.",
+                "detalhes": payment
+            }), 400
+
+    except Exception as e:
+        return jsonify({"sucesso": False, "mensagem": str(e)}), 500
+    
 @app.route('/api/admin/cancelar-assinatura', methods=['POST'])
 def admin_cancelar_assinatura():
     dados = request.get_json()
@@ -63,13 +128,14 @@ def admin_cancelar_assinatura():
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            # Apaga o registro da tabela de assinaturas definitivamente
+            # Atualiza o status para 'cancelado' em vez de deletar
             cursor.execute("""
-                DELETE FROM assinaturas 
+                UPDATE assinaturas 
+                SET status = 'cancelado' 
                 WHERE id = %s
             """, (assinatura_id,))
             conn.commit()
-            return jsonify({'sucesso': True, 'mensagem': 'Assinatura cancelada e removida com sucesso!'}), 200
+            return jsonify({'sucesso': True, 'mensagem': 'Assinatura cancelada com sucesso!'}), 200
     except Exception as e:
         conn.rollback()
         return jsonify({'sucesso': False, 'mensagem': str(e)}), 500
@@ -126,8 +192,17 @@ def listar_servicos_site():
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT id, nome, preco FROM servicos ORDER BY nome ASC")
-            servicos = cursor.fetchall()
+            # Tenta buscar com a estrutura padrão
+            try:
+                cursor.execute("SELECT id, nome, preco, IFNULL(foto, '') AS foto FROM servicos ORDER BY nome ASC")
+                servicos = cursor.fetchall()
+            except Exception:
+                # Caso a coluna 'foto' ainda não exista na tabela do MySQL, busca sem ela para não dar erro
+                cursor.execute("SELECT id, nome, preco FROM servicos ORDER BY nome ASC")
+                servicos = cursor.fetchall()
+                for s in servicos:
+                    s['foto'] = '' # Adiciona a chave vazia para o JS não quebrar
+
             return jsonify({'sucesso': True, 'servicos': servicos}), 200
     except Exception as e:
         return jsonify({'sucesso': False, 'servicos': [], 'erro': str(e)}), 500
@@ -312,7 +387,7 @@ def cliente_tem_assinatura_ativa(cliente_id):
             sql = """
                 SELECT id FROM assinaturas 
                 WHERE cliente_id = %s 
-                  AND status = 'Ativo' 
+                  AND LOWER(status) = 'ativo' 
                   AND data_renovacao >= CURDATE()
                 LIMIT 1
             """
@@ -953,7 +1028,8 @@ def admin_planos_ativos():
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            # Adicionamos o filtro WHERE status = 'ativo' para sumir os inativos/cancelados
+            # Certifique-se de que NÃO há filtro "WHERE status = 'ativo'" aqui,
+            # para que a web receba tanto os ativos quanto os cancelados, igual ao Flutter!
             cursor.execute("""
                 SELECT 
                     a.id, 
@@ -965,7 +1041,6 @@ def admin_planos_ativos():
                     a.status
                 FROM assinaturas AS a
                 JOIN usuarios AS u ON a.cliente_id = u.id
-                WHERE a.status = 'ativo' OR a.status = 'active'
                 ORDER BY a.id DESC
             """)
             planos = cursor.fetchall()
@@ -987,6 +1062,7 @@ def assinar_plano():
 
     data_inicio = datetime.now().date()
     data_renovacao = data_inicio + timedelta(days=30)
+    data_renovacao_fmt = data_renovacao.strftime("%d/%m/%Y") # Formato legível para o alerta
 
     conn = get_db_connection()
     try:
@@ -1001,7 +1077,12 @@ def assinar_plano():
             )
             conn.commit()
 
-        return jsonify({"sucesso": True, "mensagem": "Assinatura realizada com sucesso!"})
+        # Retorna a data junto para o JavaScript exibir no alert sem dar undefined
+        return jsonify({
+            "sucesso": True, 
+            "mensagem": "Assinatura realizada com sucesso!",
+            "renovacao": data_renovacao_fmt
+        })
     finally:
         conn.close()
 
@@ -1088,27 +1169,31 @@ def agendar():
         except (TypeError, ValueError):
             barbeiro_id = 1
 
-        conn = get_db_connection()
-        try:
-            with conn.cursor() as cursor:
-                # Busca o nome do barbeiro
-                cursor.execute("SELECT nome FROM barbeiros WHERE id = %s", (barbeiro_id,))
-                barb = cursor.fetchone()
-                profissional_nome = barb['nome'] if barb else "Willian Bruno"
+        # Revalida o status atual da assinatura diretamente no POST por segurança
+        tem_assinatura_atual = cliente_tem_assinatura_ativa(cliente_id)
 
-                # Busca o preço correto na tabela de serviços
-                cursor.execute("SELECT preco FROM servicos WHERE LOWER(TRIM(nome)) = LOWER(TRIM(%s))", (servico,))
-                serv_db = cursor.fetchone()
-                preco_servico = float(serv_db['preco']) if serv_db else 35.00
-        finally:
-            conn.close()
-
-        if tipo_pagamento == "plano" and not tem_assinatura:
-            erro = "Você não possui uma assinatura ativa para usar esta opção."
+        # Bloqueia se o tipo de pagamento escolhido for "plano" ou "vip" e ele não tiver assinatura ativa
+        if tipo_pagamento in ["plano", "vip"] and not tem_assinatura_atual:
+            erro = "Você não possui uma assinatura ativa para usar esta opção de pagamento."
         else:
             conn = get_db_connection()
             try:
                 with conn.cursor() as cursor:
+                    # Busca o nome do barbeiro
+                    cursor.execute("SELECT nome FROM barbeiros WHERE id = %s", (barbeiro_id,))
+                    barb = cursor.fetchone()
+                    profissional_nome = barb['nome'] if barb else "Willian Bruno"
+
+                    # Busca o preço correto na tabela de serviços
+                    cursor.execute("SELECT preco FROM servicos WHERE LOWER(TRIM(nome)) = LOWER(TRIM(%s))", (servico,))
+                    serv_db = cursor.fetchone()
+                    preco_servico = float(serv_db['preco']) if serv_db else 35.00
+
+                    # Se a modalidade for plano ou vip, o preço do agendamento pode ser zerado ou mantido conforme sua regra
+                    if tipo_pagamento in ["plano", "vip"]:
+                        preco_servico = 0.00
+
+                    # Verifica se o horário já está ocupado
                     cursor.execute(
                         "SELECT id FROM agendamentos WHERE barbeiro_id = %s AND data = %s AND horario = %s AND status != 'cancelado'",
                         (barbeiro_id, data, horario)
@@ -1129,9 +1214,7 @@ def agendar():
             finally:
                 conn.close()
 
-    # GARANTIA: Se houver algum erro (como horário ocupado ou falta de plano), a página é renderizada novamente exibindo o erro
     return render_template("agendar.html", erro=erro, tem_assinatura=tem_assinatura, barbeiros=barbeiros)
-
 
 @app.route("/meus-agendamentos")
 def meus_agendamentos():
@@ -1181,7 +1264,15 @@ def horarios_disponiveis():
     finally:
         conn.close()
 
+    # Filtra os horários já ocupados
     livres = [h for h in todos_horarios if h not in agendados]
+
+    # SE A DATA SELECIONADA FOR HOJE, FILTRA OS HORÁRIOS QUE JÁ PASSARAM
+    data_atual_str = datetime.now().strftime("%Y-%m-%d")
+    if data == data_atual_str:
+        hora_atual_str = datetime.now().strftime("%H:%M")
+        livres = [h for h in livres if h >= hora_atual_str]
+
     return jsonify(livres)
 
 

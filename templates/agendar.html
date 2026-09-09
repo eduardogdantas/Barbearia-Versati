@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Barbearia — Agendamento</title>
+    <title>Barbearia — Novo Agendamento</title>
     <link rel="icon" type="image/jpeg" href="{{ url_for('static', filename='img/Logo_Barbearia_Versati.jpeg') }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Anton&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -31,7 +31,7 @@
         }
 
         .container {
-            max-width: 580px;
+            max-width: 600px;
             width: 100%;
             background: var(--bg-card);
             border: 1px solid var(--stroke);
@@ -53,17 +53,49 @@
             text-align: center;
         }
 
-        .form-group { margin-bottom: 22px; }
+        /* Barra de Progresso das Etapas */
+        .steps-indicator {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 30px;
+            position: relative;
+        }
+        .step-dot {
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            background: var(--stroke);
+            color: var(--text-dim);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            font-weight: 700;
+            transition: all 0.3s;
+        }
+        .step-dot.ativo { background: var(--brass); color: #fff; }
+        .step-dot.concluido { background: var(--success); color: #fff; }
+
+        /* Blocos de Etapas */
+        .etapa-bloco { display: none; }
+        .etapa-bloco.ativa { display: block; animation: fadeIn 0.3s ease-in-out; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
         label {
             display: block;
             font-size: 0.85rem;
-            font-weight: 500;
-            margin-bottom: 8px;
-            color: var(--text-dim);
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: var(--text);
             text-transform: uppercase;
-            letter-spacing: 0.02em;
+            letter-spacing: 0.03em;
         }
-        select, input {
+
+        input[type="tel"] {
             width: 100%;
             padding: 12px 14px;
             background: var(--bg);
@@ -73,16 +105,94 @@
             font-family: 'Work Sans', sans-serif;
             font-size: 0.95rem;
             outline: none;
-            color-scheme: dark; 
+            margin-bottom: 20px;
+            color-scheme: dark;
         }
-        select:focus, input:focus { border-color: var(--brass); }
+        input[type="tel"]:focus { border-color: var(--brass); }
 
-        /* Estilo dos Dias (Carrossel / Grid) */
+        /* Cards de Seleção */
+        .grid-selecao {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        .card-opcao {
+            background: var(--bg);
+            border: 1px solid var(--stroke);
+            border-radius: 10px;
+            padding: 16px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+        .card-opcao:hover { border-color: var(--brass); background: var(--bg-card-hover); }
+        .card-opcao.selecionado {
+            border-color: var(--brass);
+            background: rgba(216, 31, 44, 0.1);
+        }
+        
+        /* Avatar de Boneco para Barbeiros */
+        .avatar-boneco {
+            width: 65px;
+            height: 65px;
+            border-radius: 50%;
+            background: #1c1c1c;
+            border: 1px solid var(--stroke);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-dim);
+        }
+        .avatar-boneco svg {
+            width: 38px;
+            height: 38px;
+            fill: currentColor;
+        }
+
+        /* Foto do Serviço ou Fundo Estilizado */
+        .card-img-wrapper {
+            width: 65px;
+            height: 65px;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #1c1c1c;
+            border: 1px solid var(--stroke);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .card-img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .servico-placeholder {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #1c1c1c 0%, #0a0a0a 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Anton', sans-serif;
+            font-size: 1.2rem;
+            color: var(--brass);
+            border: 1px dashed var(--stroke);
+        }
+
+        .card-titulo { font-family: 'Anton', sans-serif; font-size: 1rem; text-transform: uppercase; }
+        .card-sub { font-size: 0.78rem; color: var(--text-dim); }
+
+        /* Carrossel de Dias */
         .dias-grid {
             display: grid;
             grid-template-columns: repeat(6, 1fr);
             gap: 8px;
-            margin-top: 5px;
+            margin-bottom: 20px;
         }
         .dia-card {
             background: var(--bg);
@@ -94,85 +204,57 @@
             transition: all 0.2s;
         }
         .dia-card:hover { border-color: var(--brass); }
-        .dia-card input { display: none; }
-        .dia-card.selecionado {
-            background: var(--brass);
-            border-color: var(--brass);
-            color: #fff;
-        }
+        .dia-card.selecionado { background: var(--brass); border-color: var(--brass); color: #fff; }
         .dia-card .nome-dia { font-size: 0.75rem; text-transform: uppercase; color: var(--text-dim); }
         .dia-card.selecionado .nome-dia { color: #fff; }
         .dia-card .num-dia { font-family: 'Anton', sans-serif; font-size: 1.1rem; margin-top: 2px; }
 
-        /* Estilo dos Horários por Turno */
-        .turno-titulo {
-            font-family: 'Anton', sans-serif;
-            font-size: 1.1rem;
-            text-transform: uppercase;
-            margin: 18px 0 10px 0;
-            letter-spacing: 0.03em;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .turno-titulo span { font-size: 0.8rem; font-family: 'Work Sans', sans-serif; color: var(--text-dim); }
-
+        /* Horários */
         .horarios-grid {
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
+            grid-template-columns: repeat(3, 1fr);
             gap: 10px;
+            max-height: 220px;
+            overflow-y: auto;
+            margin-bottom: 24px;
         }
         .horario-btn {
             background: var(--bg);
             border: 1px solid var(--stroke);
             color: var(--text);
-            padding: 12px;
+            padding: 10px;
             border-radius: 8px;
             font-family: 'Anton', sans-serif;
-            font-size: 1.05rem;
+            font-size: 1rem;
             cursor: pointer;
             text-align: center;
             transition: all 0.2s;
         }
         .horario-btn:hover { border-color: var(--brass); background: var(--bg-card-hover); }
-        .horario-btn.selecionado {
-            background: var(--brass);
-            border-color: var(--brass);
-            color: #fff;
-        }
+        .horario-btn.selecionado { background: var(--brass); border-color: var(--brass); color: #fff; }
 
-        /* Estilos da Opção de Pagamento */
-        .pagamento-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 12px;
-            margin-top: 6px;
-        }
-        .pagamento-card {
-            background: var(--bg);
-            border: 1px solid var(--stroke);
-            border-radius: 8px;
-            padding: 14px;
-            cursor: pointer;
-            transition: all 0.2s;
+        /* Botões */
+        .botoes-etapa {
             display: flex;
-            flex-direction: column;
-            gap: 4px;
+            gap: 12px;
+            margin-top: 20px;
         }
-        .pagamento-card:hover { border-color: var(--brass); }
-        .pagamento-card.selecionado {
-            border-color: var(--brass);
-            background: rgba(216, 31, 44, 0.08);
-        }
-        .pagamento-card .titulo-opcao {
+        .btn {
+            padding: 14px;
+            border-radius: 8px;
             font-family: 'Anton', sans-serif;
             font-size: 1rem;
             text-transform: uppercase;
+            letter-spacing: 0.03em;
+            cursor: pointer;
+            text-align: center;
+            border: none;
+            flex: 1;
         }
-        .pagamento-card .desc-opcao {
-            font-size: 0.78rem;
-            color: var(--text-dim);
-        }
+        .btn-primary { background: var(--brass); color: #fff; }
+        .btn-outline { background: transparent; color: var(--text); border: 1px solid var(--stroke); }
+        .btn:hover { filter: brightness(1.1); }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
         .erro-box {
             color: var(--brass);
@@ -184,259 +266,264 @@
             font-size: 0.9rem;
             text-align: center;
         }
-
-        .buttons { 
-            display: flex; 
-            flex-direction: column; 
-            gap: 12px; 
-            margin-top: 30px; 
-        }
-        .btn {
-            padding: 14px;
-            border-radius: 8px;
-            text-decoration: none;
-            font-family: 'Anton', sans-serif;
-            font-size: 1rem;
-            text-transform: uppercase;
-            letter-spacing: 0.03em;
-            cursor: pointer;
-            text-align: center;
-            display: block;
-            width: 100%;
-            border: none;
-        }
-        .btn-primary { background: var(--brass); color: #fff; }
-        .btn-outline { background: transparent; color: var(--text); border: 1px solid var(--stroke); }
-        .btn:hover { filter: brightness(1.1); }
     </style>
 </head>
 <body>
 
     <div class="container">
         <h1>Novo Agendamento</h1>
-        <p class="subtitle">Selecione o profissional, data, horário e serviço.</p>
+        <p class="subtitle" id="subtitulo-etapa">Passo 1 de 4: Informações e Profissional</p>
         
+        <div class="steps-indicator">
+            <div class="step-dot ativo" id="dot-1">1</div>
+            <div class="step-dot" id="dot-2">2</div>
+            <div class="step-dot" id="dot-3">3</div>
+            <div class="step-dot" id="dot-4">4</div>
+        </div>
+
         {% if erro %}
             <div class="erro-box">{{ erro }}</div>
         {% endif %}
 
-        <form method="POST">
-            <!-- Etapa 1: Telefone do Cliente -->
-            <div class="form-group">
+        <form method="POST" id="formAgendamento">
+            <input type="hidden" id="barbeiro_id" name="barbeiro_id" required>
+            <input type="hidden" id="servico" name="servico" required>
+            <input type="hidden" id="data" name="data" required>
+            <input type="hidden" id="horario" name="horario" required>
+            <input type="hidden" id="tipo_pagamento" name="tipo_pagamento" value="presencial" required>
+
+            <!-- ETAPA 1: Telefone e Selecionar Barbeiro -->
+            <div class="etapa-bloco ativa" id="etapa-1">
                 <label for="cliente_telefone">1. Seu Telefone / WhatsApp</label>
-                <input type="tel" id="cliente_telefone" name="cliente_telefone" placeholder="(83) 99999-9999" required>
-            </div>
+                <input type="tel" id="cliente_telefone" name="cliente_telefone" placeholder="(83) 99999-9999" required oninput="validarEtapa1()">
 
-            <!-- Etapa 2: Profissional -->
-            <div class="form-group">
-                <label for="barbeiro_id">2. Selecione o Profissional</label>
-                <select id="barbeiro_id" name="barbeiro_id" required>
-                    <option value="" disabled selected>Escolha o profissional...</option>
+                <label style="margin-top: 10px;">2. Selecione o Profissional</label>
+                <div class="grid-selecao">
                     {% for b in barbeiros %}
-                        <option value="{{ b.id }}">{{ b.nome }} ({{ b.cargo }})</option>
+                    <div class="card-opcao" onclick="selecionarBarbeiro('{{ b.id }}', this)">
+                        <div class="avatar-boneco">
+                            <svg viewBox="0 0 24 24">
+                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/>
+                            </svg>
+                        </div>
+                        <div class="card-titulo">{{ b.nome }}</div>
+                        <div class="card-sub">{{ b.cargo }}</div>
+                    </div>
                     {% endfor %}
-                </select>
-            </div>
-
-            <!-- Etapa 3: Seleção de Dias (Cards Estilizados) -->
-            <div class="form-group">
-                <label>3. Data do Atendimento</label>
-                <input type="hidden" id="data" name="data" required>
-                <div class="dias-grid" id="dias-container">
-                    <!-- Gerado via JavaScript -->
+                </div>
+                <div class="botoes-etapa">
+                    <a href="/" class="btn btn-outline">Cancelar</a>
+                    <button type="button" class="btn btn-primary" id="btnAvancar1" onclick="mudarEtapa(2)" disabled>Avançar</button>
                 </div>
             </div>
 
-            <!-- Etapa 4: Horários Disponíveis por Turno -->
-            <div class="form-group" id="secao-horarios" style="display:none;">
-                <label>4. Selecione o Horário</label>
-                <input type="hidden" id="horario" name="horario" required>
-                
-                <div id="lista-horarios">
-                    <!-- Preenchido via JavaScript -->
+            <!-- ETAPA 2: Selecionar Serviço -->
+            <div class="etapa-bloco" id="etapa-2">
+                <label>Escolha o Serviço</label>
+                <div class="grid-selecao" id="grid-servicos"></div>
+                <div class="botoes-etapa">
+                    <button type="button" class="btn btn-outline" onclick="mudarEtapa(1)">Voltar</button>
+                    <button type="button" class="btn btn-primary" id="btnAvancar2" onclick="mudarEtapa(3)" disabled>Avançar</button>
                 </div>
             </div>
 
-            <!-- Etapa 5: Serviço -->
-            <div class="form-group">
-    <label for="servico">5. Selecione o Serviço</label>
-    <select id="servico" name="servico" required>
-        <option value="" disabled selected>Carregando serviços...</option>
-    </select>
-</div>
+            <!-- ETAPA 3: Data e Horário -->
+            <div class="etapa-bloco" id="etapa-3">
+                <label>Data do Atendimento</label>
+                <div class="dias-grid" id="dias-container"></div>
 
-            <!-- Etapa 6: Forma de Pagamento -->
-            <div class="form-group">
-                <label>6. Forma de Pagamento</label>
-                <input type="hidden" id="tipo_pagamento" name="tipo_pagamento" value="presencial" required>
-                
-                <div class="pagamento-grid">
-                    <div class="pagamento-card selecionado" id="opt-presencial" onclick="selecionarPagamento('presencial')">
-                        <div class="titulo-opcao">Pagamento Presencial</div>
-                        <div class="desc-opcao">Pague no balcão via Pix, Cartão ou Dinheiro ao finalizar o serviço.</div>
+                <label style="margin-top: 15px;">Horários Disponíveis</label>
+                <div class="horarios-grid" id="lista-horarios">
+                    <p style="color: var(--text-dim); grid-column: span 3; text-align: center;">Selecione uma data acima.</p>
+                </div>
+
+                <div class="botoes-etapa">
+                    <button type="button" class="btn btn-outline" onclick="mudarEtapa(2)">Voltar</button>
+                    <button type="button" class="btn btn-primary" id="btnAvancar3" onclick="mudarEtapa(4)" disabled>Avançar</button>
+                </div>
+            </div>
+
+            <!-- ETAPA 4: Pagamento e Confirmação -->
+            <div class="etapa-bloco" id="etapa-4">
+                <label>Forma de Pagamento</label>
+                <div class="grid-selecao">
+                    <div class="card-opcao selecionado" id="opt-presencial" onclick="selecionarPagamento('presencial')">
+                        <div class="card-titulo">Presencial</div>
+                        <div class="card-sub">Pague no balcão ao finalizar.</div>
                     </div>
-
-                    {% if tem_assinatura %}
-                    <div class="pagamento-card" id="opt-plano" onclick="selecionarPagamento('plano')">
-                        <div class="titulo-opcao" style="color: #4caf50;">Usar Assinatura VIP</div>
-                        <div class="desc-opcao">Incluso no seu plano mensal ativo. Sem cobrança extra.</div>
+                    <div class="card-opcao" id="opt-vip" onclick="selecionarPagamento('vip')">
+                        <div class="card-titulo" style="color: #4caf50;">Plano VIP</div>
+                        <div class="card-sub">Utilizar benefícios da assinatura.</div>
                     </div>
-                    {% endif %}
                 </div>
-            </div>
 
-            <div class="buttons">
-                <button type="submit" class="btn btn-primary">Confirmar Agendamento</button>
-                <a href="/" class="btn btn-outline">Voltar ao Início</a>
+                <div class="botoes-etapa">
+                    <button type="button" class="btn btn-outline" onclick="mudarEtapa(3)">Voltar</button>
+                    <button type="submit" class="btn btn-primary">Confirmar Agendamento</button>
+                </div>
             </div>
         </form>
     </div>
 
     <script>
-        const profInput = document.getElementById('barbeiro_id');
-        const dataInput = document.getElementById('data');
-        const horarioInput = document.getElementById('horario');
-        const tipoPagamentoInput = document.getElementById('tipo_pagamento');
-        const diasContainer = document.getElementById('dias-container');
-        const secaoHorarios = document.getElementById('secao-horarios');
-        const listaHorarios = document.getElementById('lista-horarios');
+        let etapaAtual = 1;
 
-        function selecionarPagamento(tipo) {
-            tipoPagamentoInput.value = tipo;
-            document.querySelectorAll('.pagamento-card').forEach(card => card.classList.remove('selecionado'));
-            
-            if (tipo === 'presencial') {
-                document.getElementById('opt-presencial').classList.add('selecionado');
-            } else if (document.getElementById('opt-plano')) {
-                document.getElementById('opt-plano').classList.add('selecionado');
+        function mudarEtapa(novaEtapa) {
+            document.querySelectorAll('.etapa-bloco').forEach(el => el.classList.remove('ativa'));
+            document.getElementById(`etapa-${novaEtapa}`).classList.add('ativa');
+
+            for (let i = 1; i <= 4; i++) {
+                const dot = document.getElementById(`dot-${i}`);
+                dot.classList.remove('ativo', 'concluido');
+                if (i < novaEtapa) dot.classList.add('concluido');
+                else if (i === novaEtapa) dot.classList.add('ativo');
+            }
+
+            const titulos = [
+                "Passo 1 de 4: Informações e Profissional",
+                "Passo 2 de 4: Escolha o Serviço",
+                "Passo 3 de 4: Data e Horário",
+                "Passo 4 de 4: Pagamento e Confirmação"
+            ];
+            document.getElementById('subtitulo-etapa').innerText = titulos[novaEtapa - 1];
+            etapaAtual = novaEtapa;
+        }
+
+        function validarEtapa1() {
+            const telefone = document.getElementById('cliente_telefone').value.trim();
+            const barbeiroId = document.getElementById('barbeiro_id').value;
+            const btn = document.getElementById('btnAvancar1');
+
+            // Libera o botão apenas se houver telefone preenchido e barbeiro selecionado
+            if (telefone.length >= 8 && barbeiroId !== "") {
+                btn.disabled = false;
+            } else {
+                btn.disabled = true;
             }
         }
 
+        function selecionarBarbeiro(id, elemento) {
+            document.querySelectorAll('#etapa-1 .card-opcao').forEach(c => c.classList.remove('selecionado'));
+            elemento.classList.add('selecionado');
+            document.getElementById('barbeiro_id').value = id;
+            validarEtapa1();
+        }
+
+        async function carregarServicosEtapa2() {
+            const grid = document.getElementById('grid-servicos');
+            try {
+                const res = await fetch('/api/servicos');
+                const data = await res.json();
+                
+                if (data.sucesso && data.servicos && data.servicos.length > 0) {
+                    grid.innerHTML = '';
+                    data.servicos.forEach(s => {
+                        const precoFmt = Number(s.preco).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                        
+                        const card = document.createElement('div');
+                        card.className = 'card-opcao';
+                        card.onclick = () => selecionarServico(s.nome, card);
+                        
+                        let conteudoVisual = '';
+                        if (s.foto && s.foto.trim() !== '') {
+                            conteudoVisual = `<div class="card-img-wrapper"><img src="${s.foto}" class="card-img" alt="${s.nome}"></div>`;
+                        } else {
+                            const primeiraLetra = s.nome ? s.nome.charAt(0).toUpperCase() : 'S';
+                            conteudoVisual = `<div class="card-img-wrapper"><div class="servico-placeholder">${primeiraLetra}</div></div>`;
+                        }
+
+                        card.innerHTML = `
+                            ${conteudoVisual}
+                            <div class="card-titulo">${s.nome}</div>
+                            <div class="card-sub">${precoFmt}</div>
+                        `;
+                        grid.appendChild(card);
+                    });
+                } else {
+                    grid.innerHTML = '<p style="color: var(--text-dim); grid-column: span 2; text-align: center;">Nenhum serviço cadastrado.</p>';
+                }
+            } catch (e) {
+                console.error("Erro ao carregar serviços", e);
+            }
+        }
+
+        function selecionarServico(nomeServico, elemento) {
+            document.querySelectorAll('#grid-servicos .card-opcao').forEach(c => c.classList.remove('selecionado'));
+            elemento.classList.add('selecionado');
+            document.getElementById('servico').value = nomeServico;
+            document.getElementById('btnAvancar2').disabled = false;
+        }
+
         function gerarDias() {
-            diasContainer.innerHTML = '';
+            const container = document.getElementById('dias-container');
+            container.innerHTML = '';
             const diasSemana = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-            
+
             for (let i = 0; i < 6; i++) {
                 let d = new Date();
                 d.setDate(d.getDate() + i);
+                let dataFmt = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
                 
-                let ano = d.getFullYear();
-                let mes = String(d.getMonth() + 1).padStart(2, '0');
-                let diaNum = String(d.getDate()).padStart(2, '0');
-                let dataFormatada = `${ano}-${mes}-${diaNum}`;
-                
-                let nomeDia = diasSemana[d.getDay()];
-
                 let card = document.createElement('div');
                 card.className = 'dia-card';
                 if (i === 0) {
                     card.classList.add('selecionado');
-                    dataInput.value = dataFormatada;
+                    document.getElementById('data').value = dataFmt;
                 }
-
-                card.innerHTML = `
-                    <div class="nome-dia">${nomeDia}</div>
-                    <div class="num-dia">${diaNum}</div>
-                `;
-
-                card.addEventListener('click', () => {
+                card.innerHTML = `<div class="nome-dia">${diasSemana[d.getDay()]}</div><div class="num-dia">${String(d.getDate()).padStart(2,'0')}</div>`;
+                
+                card.onclick = () => {
                     document.querySelectorAll('.dia-card').forEach(c => c.classList.remove('selecionado'));
                     card.classList.add('selecionado');
-                    dataInput.value = dataFormatada;
+                    document.getElementById('data').value = dataFmt;
                     carregarHorarios();
-                });
-
-                diasContainer.appendChild(card);
+                };
+                container.appendChild(card);
             }
             carregarHorarios();
         }
 
-        function carregarHorarios() {
-            if (!profInput.value || !dataInput.value) return;
+        async function carregarHorarios() {
+            const barbId = document.getElementById('barbeiro_id').value;
+            const dataVal = document.getElementById('data').value;
+            const lista = document.getElementById('lista-horarios');
 
-            fetch(`/api/horarios-disponiveis?barbeiro_id=${profInput.value}&data=${dataInput.value}`)
-                .then(res => res.json())
-                .then(horarios => {
-                    secaoHorarios.style.display = 'block';
-                    listaHorarios.innerHTML = '';
-                    horarioInput.value = '';
+            if (!barbId || !dataVal) return;
 
-                    if (horarios.length === 0) {
-                        listaHorarios.innerHTML = '<p style="color: var(--text-dim); text-align: center; padding: 10px;">Nenhum horário disponível para esta data.</p>';
-                        return;
-                    }
+            const res = await fetch(`/api/horarios-disponiveis?barbeiro_id=${barbId}&data=${dataVal}`);
+            const horarios = await res.json();
 
-                    let manha = horarios.filter(h => parseInt(h.split(':')[0]) < 12);
-                    let tarde = horarios.filter(h => parseInt(h.split(':')[0]) >= 12);
+            lista.innerHTML = '';
+            if (horarios.length === 0) {
+                lista.innerHTML = '<p style="color: var(--text-dim); grid-column: span 3; text-align: center;">Nenhum horário disponível para esta data.</p>';
+                return;
+            }
 
-                    if (manha.length > 0) {
-                        let htmlManha = `<div class="turno-titulo">Manhã <span>${manha.length} horários</span></div><div class="horarios-grid">`;
-                        manha.forEach(h => {
-                            htmlManha += `<div class="horario-btn" data-hora="${h}">${h}</div>`;
-                        });
-                        htmlManha += `</div>`;
-                        listaHorarios.innerHTML += htmlManha;
-                    }
-
-                    if (tarde.length > 0) {
-                        let htmlTarde = `<div class="turno-titulo">Tarde / Noite <span>${tarde.length} horários</span></div><div class="horarios-grid">`;
-                        tarde.forEach(h => {
-                            htmlTarde += `<div class="horario-btn" data-hora="${h}">${h}</div>`;
-                        });
-                        htmlTarde += `</div>`;
-                        listaHorarios.innerHTML += htmlTarde;
-                    }
-
-                    document.querySelectorAll('.horario-btn').forEach(btn => {
-                        btn.addEventListener('click', () => {
-                            document.querySelectorAll('.horario-btn').forEach(b => b.classList.remove('selecionado'));
-                            btn.classList.add('selecionado');
-                            horarioInput.value = btn.getAttribute('data-hora');
-                        });
-                    });
-                });
-        }
-
-        profInput.addEventListener('change', carregarHorarios);
-        gerarDias();
-        // Função para buscar os serviços cadastrados no app e preencher o select do site
-async function carregarServicosDinamicos() {
-    const selectServico = document.getElementById('servico');
-    if (!selectServico) return;
-
-    try {
-        const response = await fetch('/api/servicos');
-        const data = await response.json();
-
-        if (data.sucesso && data.servicos && data.servicos.length > 0) {
-            selectServico.innerHTML = '<option value="" disabled selected>Escolha o serviço...</option>';
-            
-            data.servicos.forEach(servico => {
-                // Formata o preço para o padrão brasileiro (R$ 0,00)
-                const precoFormatado = Number(servico.preco).toLocaleString('pt-BR', {
-                    style: 'currency',
-                    currency: 'BRL'
-                });
-
-                const option = document.createElement('option');
-                option.value = servico.nome; // O valor enviado ao salvar o agendamento
-                option.textContent = `${servico.nome} — ${precoFormatado}`; // O texto exibido para o cliente
-                
-                selectServico.appendChild(option);
+            horarios.forEach(h => {
+                const btn = document.createElement('div');
+                btn.className = 'horario-btn';
+                btn.textContent = h;
+                btn.onclick = () => {
+                    document.querySelectorAll('.horario-btn').forEach(b => b.classList.remove('selecionado'));
+                    btn.classList.add('selecionado');
+                    document.getElementById('horario').value = h;
+                    document.getElementById('btnAvancar3').disabled = false;
+                };
+                lista.appendChild(btn);
             });
-        } else {
-            selectServico.innerHTML = '<option value="" disabled>Nenhum serviço disponível no momento</option>';
         }
-    } catch (error) {
-        console.error('Erro ao carregar serviços:', error);
-        selectServico.innerHTML = '<option value="" disabled>Erro ao carregar serviços</option>';
-    }
-}
 
-// Chama a função quando a página terminar de carregar
-document.addEventListener('DOMContentLoaded', () => {
-    carregarServicosDinamicos();
-});
+        function selecionarPagamento(tipo) {
+            document.getElementById('tipo_pagamento').value = tipo;
+            document.getElementById('opt-presencial').classList.remove('selecionado');
+            document.getElementById('opt-vip').classList.remove('selecionado');
+            document.getElementById(`opt-${tipo}`).classList.add('selecionado');
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            carregarServicosEtapa2();
+            gerarDias();
+        });
     </script>
 </body>
 </html>
