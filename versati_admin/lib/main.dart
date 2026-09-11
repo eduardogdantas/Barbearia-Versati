@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 // ==============================================================================
 // CONFIGURAÇÃO CENTRAL DA API
 // ==============================================================================
 class AppConfig {
-  static const String baseUrl = 'http://192.168.0.26:5000';
+  static const String baseUrl = 'http://192.168.0.8:5000';
   static const String apiUrl = '$baseUrl/api';
 }
 
@@ -1017,7 +1019,6 @@ class _FinanceiroViewState extends State<FinanceiroView> {
                   ),
                   const SizedBox(height: 24),
 
-                  // CORREÇÃO DO OVERFLOW AQUI (Envolvido em Expanded e Flexible)
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -1398,7 +1399,7 @@ class DadosBarbeariaScreen extends StatelessWidget {
 }
 
 // ==============================================================================
-// USUÁRIOS, PRODUTOS E PACOTES
+// TELA DE GERENCIAR USUÁRIOS
 // ==============================================================================
 
 class GerenciarUsuariosScreen extends StatefulWidget {
@@ -1416,6 +1417,9 @@ class _GerenciarUsuariosScreenState extends State<GerenciarUsuariosScreen> {
 
   List<dynamic> _usuarios = [];
   bool _isLoading = true;
+  
+  // Mapa para controlar quais IDs de usuários estão com a senha visível
+  final Map<int, bool> _senhasVisiveis = {};
 
   final String _apiUrl = '${AppConfig.apiUrl}/admin/usuarios';
 
@@ -1471,6 +1475,23 @@ class _GerenciarUsuariosScreenState extends State<GerenciarUsuariosScreen> {
     } catch (e) {
       if (!mounted) return;
       _mostrarSnack('Erro de conexão ao alterar senha.');
+    }
+  }
+
+  Future<void> _removerUsuarioAPI(int usuarioId) async {
+    try {
+      final response = await http.delete(Uri.parse('$_apiUrl/$usuarioId'));
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        _mostrarSnack('🗑️ Usuário e registros vinculados removidos!');
+        _carregarUsuarios();
+      } else {
+        final resData = jsonDecode(response.body);
+        _mostrarSnack('❌ ${resData['mensagem'] ?? 'Erro ao remover usuário.'}');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _mostrarSnack('Erro de conexão com o servidor.');
     }
   }
 
@@ -1540,6 +1561,37 @@ class _GerenciarUsuariosScreenState extends State<GerenciarUsuariosScreen> {
     );
   }
 
+  void _confirmarRemocao(int usuarioId, String nomeUsuario) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: _cardDark,
+        title: const Text(
+          'REMOVER USUÁRIO',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+        content: Text(
+          'Deseja realmente remover o usuário $nomeUsuario? Todos os agendamentos vinculados também serão removidos.',
+          style: TextStyle(color: _textSecondary, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: _brandRed),
+            onPressed: () {
+              Navigator.pop(context);
+              _removerUsuarioAPI(usuarioId);
+            },
+            child: const Text('Remover', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _mostrarSnack(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
@@ -1588,6 +1640,17 @@ class _GerenciarUsuariosScreenState extends State<GerenciarUsuariosScreen> {
   }
 
   Widget _buildUsuarioCard(Map<String, dynamic> u) {
+    final int id = u['id'];
+    final bool senhaVisivel = _senhasVisiveis[id] ?? false;
+    
+    // Pega o valor enviado pelo Flask
+    final String senhaCadastrada = u['senha_texto'] ?? '';
+    
+    // Se estiver visível mostra a senha limpa, senão mostra os pontos
+    final String senhaExibida = senhaVisivel 
+        ? (senhaCadastrada.isNotEmpty ? senhaCadastrada : 'Não informada') 
+        : '••••••••';
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
@@ -1618,8 +1681,14 @@ class _GerenciarUsuariosScreenState extends State<GerenciarUsuariosScreen> {
                 ),
               ),
               Text(
-                'ID: #${u['id']}',
+                'ID: #$id',
                 style: TextStyle(color: _textSecondary, fontSize: 12),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                icon: const Icon(Icons.delete_outline, color: Colors.white38, size: 20),
+                tooltip: 'Remover Usuário',
+                onPressed: () => _confirmarRemocao(id, u['nome'] ?? 'Cliente'),
               ),
             ],
           ),
@@ -1647,20 +1716,40 @@ class _GerenciarUsuariosScreenState extends State<GerenciarUsuariosScreen> {
                 style: TextStyle(color: _textSecondary, fontSize: 14, fontWeight: FontWeight.bold),
               ),
               Expanded(
-                child: Text(
-                  '${u['senha']}',
-                  style: TextStyle(
-                    color: _brandRed,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                  overflow: TextOverflow.ellipsis,
+                child: Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 6,
+                  children: [
+                    Text(
+                      senhaExibida,
+                      style: TextStyle(
+                        color: senhaCadastrada.isEmpty && senhaVisivel ? Colors.orangeAccent : _brandRed,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                    InkWell(
+                      onTap: () {
+                        setState(() {
+                          _senhasVisiveis[id] = !senhaVisivel;
+                        });
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.all(4.0),
+                        child: Icon(
+                          senhaVisivel ? Icons.visibility_off : Icons.visibility,
+                          color: _textSecondary,
+                          size: 16,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(width: 8),
               InkWell(
                 onTap: () => _exibirDialogoResetarSenha(
-                  u['id'],
+                  id,
                   u['nome'] ?? 'Cliente',
                 ),
                 child: Container(
@@ -1690,6 +1779,7 @@ class _GerenciarUsuariosScreenState extends State<GerenciarUsuariosScreen> {
     );
   }
 }
+
 
 class GerenciarProdutosScreen extends StatefulWidget {
   const GerenciarProdutosScreen({super.key});
@@ -1737,7 +1827,7 @@ class _GerenciarProdutosScreenState extends State<GerenciarProdutosScreen> {
     }
   }
 
-  Future<void> _cadastrarProdutoAPI(String nome, String descricao, double preco, int estoque) async {
+  Future<void> _cadastrarProdutoAPI(String nome, String descricao, double preco, int estoque, String foto) async {
     try {
       final response = await http.post(
         Uri.parse(_apiUrl),
@@ -1746,7 +1836,8 @@ class _GerenciarProdutosScreenState extends State<GerenciarProdutosScreen> {
           'nome': nome, 
           'descricao': descricao, 
           'preco': preco, 
-          'estoque': estoque
+          'estoque': estoque,
+          'foto': foto,
         }),
       );
       final resData = jsonDecode(response.body);
@@ -1789,68 +1880,145 @@ class _GerenciarProdutosScreenState extends State<GerenciarProdutosScreen> {
     final descricaoCtrl = TextEditingController();
     final precoCtrl = TextEditingController();
     final estoqueCtrl = TextEditingController();
+    String fotoBase64 = '';
+    Uint8List? imagemBytesWeb;
+    XFile? imagemXFile;
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: _cardDark,
-        title: const Text('CADASTRAR NOVO PRODUTO', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nomeCtrl,
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(labelText: 'Nome do Produto', labelStyle: TextStyle(color: Colors.grey)),
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          Future<void> selecionarImagem(ImageSource source) async {
+            final picker = ImagePicker();
+            final pickedFile = await picker.pickImage(source: source, imageQuality: 70);
+            if (pickedFile != null) {
+              final bytes = await pickedFile.readAsBytes();
+              setDialogState(() {
+                imagemXFile = pickedFile;
+                imagemBytesWeb = bytes;
+                fotoBase64 = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+              });
+            }
+          }
+
+          return AlertDialog(
+            backgroundColor: _cardDark,
+            title: const Text('CADASTRAR NOVO PRODUTO', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // Seletor de Foto Visual (Câmera ou Galeria)
+                  GestureDetector(
+                    onTap: () {
+                      showModalBottomSheet(
+                        context: context,
+                        backgroundColor: _cardDark,
+                        builder: (_) => SafeArea(
+                          child: Wrap(
+                            children: [
+                              ListTile(
+                                leading: const Icon(Icons.camera_alt, color: Colors.white),
+                                title: const Text('Tirar Foto com a Câmera', style: TextStyle(color: Colors.white)),
+                                onTap: () {
+                                  Navigator.pop(context);
+                                  selecionarImagem(ImageSource.camera);
+                                },
+                              ),
+                              ListTile(
+                                leading: const Icon(Icons.photo_library, color: Colors.white),
+                                title: const Text('Escolher da Galeria', style: TextStyle(color: Colors.white)),
+                                onTap: () {
+                                  Navigator.pop(context);
+                                  selecionarImagem(ImageSource.gallery);
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1C1C1C),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white24),
+                      ),
+                      child: imagemBytesWeb != null
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: Image.memory(imagemBytesWeb!, fit: BoxFit.cover),
+                            )
+                          : Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.add_a_photo, color: _brandRed, size: 28),
+                                const SizedBox(height: 4),
+                                const Text('Foto', style: TextStyle(color: Colors.white54, fontSize: 10)),
+                              ],
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  TextField(
+                    controller: nomeCtrl,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(labelText: 'Nome do Produto', labelStyle: TextStyle(color: Colors.grey)),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: descricaoCtrl,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(labelText: 'Descrição do Produto', labelStyle: TextStyle(color: Colors.grey)),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: precoCtrl,
+                    keyboardType: TextInputType.number,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(labelText: 'Preço (Ex: 45.00)', labelStyle: TextStyle(color: Colors.grey)),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: estoqueCtrl,
+                    keyboardType: TextInputType.number,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(labelText: 'Estoque Inicial', labelStyle: TextStyle(color: Colors.grey)),
+                  ),
+                ],
               ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: descricaoCtrl,
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(labelText: 'Descrição do Produto', labelStyle: TextStyle(color: Colors.grey)),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
               ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: precoCtrl,
-                keyboardType: TextInputType.number,
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(labelText: 'Preço (Ex: 45.00)', labelStyle: TextStyle(color: Colors.grey)),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: estoqueCtrl,
-                keyboardType: TextInputType.number,
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(labelText: 'Estoque Inicial', labelStyle: TextStyle(color: Colors.grey)),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: _brandRed),
+                onPressed: () {
+                  final preco = double.tryParse(precoCtrl.text.trim().replaceAll(',', '.'));
+                  if (nomeCtrl.text.isNotEmpty && preco != null) {
+                    Navigator.pop(ctx);
+                    _cadastrarProdutoAPI(
+                      nomeCtrl.text.trim(), 
+                      descricaoCtrl.text.trim(), 
+                      preco, 
+                      int.tryParse(estoqueCtrl.text) ?? 0,
+                      fotoBase64,
+                    );
+                  } else {
+                    _mostrarSnack('Preencha nome e um preço válido.');
+                  }
+                },
+                child: const Text('Salvar', style: TextStyle(color: Colors.white)),
               ),
             ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: _brandRed),
-            onPressed: () {
-              final preco = double.tryParse(precoCtrl.text.trim().replaceAll(',', '.'));
-              if (nomeCtrl.text.isNotEmpty && preco != null) {
-                Navigator.pop(ctx);
-                _cadastrarProdutoAPI(
-                  nomeCtrl.text.trim(), 
-                  descricaoCtrl.text.trim(), 
-                  preco, 
-                  int.tryParse(estoqueCtrl.text) ?? 0
-                );
-              } else {
-                _mostrarSnack('Preencha nome e um preço válido.');
-              }
-            },
-            child: const Text('Salvar', style: TextStyle(color: Colors.white)),
-          ),
-        ],
+          );
+        },
       ),
     );
   }
@@ -1886,6 +2054,10 @@ class _GerenciarProdutosScreenState extends State<GerenciarProdutosScreen> {
                     itemBuilder: (context, index) {
                       final prod = _produtos[index];
                       final double preco = double.tryParse(prod['preco'].toString()) ?? 0;
+                      final String nome = prod['nome'] ?? '';
+                      final String foto = prod['foto'] ?? '';
+                      final String primeiraLetra = nome.isNotEmpty ? nome.substring(0, 1).toUpperCase() : 'P';
+
                       return Container(
                         margin: const EdgeInsets.only(bottom: 12),
                         padding: const EdgeInsets.all(16),
@@ -1897,12 +2069,26 @@ class _GerenciarProdutosScreenState extends State<GerenciarProdutosScreen> {
                         child: Row(
                           children: [
                             Container(
-                              padding: const EdgeInsets.all(12),
+                              width: 45,
+                              height: 45,
                               decoration: BoxDecoration(
-                                color: Colors.black,
-                                borderRadius: BorderRadius.circular(10),
+                                color: const Color(0xFF1C1C1C),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.white10),
                               ),
-                              child: Icon(Icons.shopping_bag_outlined, color: _brandRed, size: 24),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: foto.trim().isNotEmpty
+                                    ? (foto.startsWith('data:image')
+                                        ? Image.memory(base64Decode(foto.split(',')[1]), fit: BoxFit.cover)
+                                        : Image.network(foto, fit: BoxFit.cover, errorBuilder: (_,__,___) => Center(child: Text(primeiraLetra, style: TextStyle(color: _brandRed, fontWeight: FontWeight.bold, fontSize: 18)))))
+                                    : Center(
+                                        child: Text(
+                                          primeiraLetra,
+                                          style: TextStyle(color: _brandRed, fontWeight: FontWeight.bold, fontSize: 18),
+                                        ),
+                                      ),
+                              ),
                             ),
                             const SizedBox(width: 14),
                             Expanded(
@@ -1910,7 +2096,7 @@ class _GerenciarProdutosScreenState extends State<GerenciarProdutosScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    prod['nome'] ?? '',
+                                    nome,
                                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
                                   ),
                                   const SizedBox(height: 4),
@@ -2607,10 +2793,6 @@ class _GerenciarAssinaturasScreenState extends State<GerenciarAssinaturasScreen>
   }
 }
 
-// ==============================================================================
-// GERENCIAR PREÇOS DE SERVIÇOS
-// ==============================================================================
-
 class GerenciarServicosScreen extends StatefulWidget {
   const GerenciarServicosScreen({super.key});
 
@@ -2657,19 +2839,24 @@ class _GerenciarServicosScreenState extends State<GerenciarServicosScreen> {
     }
   }
 
-  Future<void> _salvarPrecoAPI(String nome, double preco) async {
+  Future<void> _salvarPrecoAPI(String nome, double preco, String categoria, String foto) async {
     try {
       final response = await http.post(
         Uri.parse(_apiUrl),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'nome': nome, 'preco': preco}),
+        body: jsonEncode({
+          'nome': nome, 
+          'preco': preco,
+          'categoria': categoria,
+          'foto': foto,
+        }),
       );
       if (!mounted) return;
       if (response.statusCode == 201) {
-        _mostrarSnack('✅ Preço salvo!');
+        _mostrarSnack('✅ Serviço salvo com sucesso!');
         _carregarServicos();
       } else {
-        _mostrarSnack('Erro ao salvar preço.');
+        _mostrarSnack('Erro ao salvar serviço.');
       }
     } catch (e) {
       if (!mounted) return;
@@ -2699,53 +2886,160 @@ class _GerenciarServicosScreenState extends State<GerenciarServicosScreen> {
   void _abrirDialogoNovoServico() {
     final nomeCtrl = TextEditingController();
     final precoCtrl = TextEditingController();
+    String categoriaSelecionada = 'Cabelo';
+    String fotoBase64 = '';
+    Uint8List? imagemBytesWeb;
+    XFile? imagemXFile;
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: _cardDark,
-        title: const Text('DEFINIR PREÇO DE SERVIÇO', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Digite o nome EXATAMENTE como aparece no formulário de agendamento do site (ex: "Corte Degradê").',
-              style: TextStyle(color: _textSecondary, fontSize: 12),
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          Future<void> selecionarImagem(ImageSource source) async {
+            final picker = ImagePicker();
+            final pickedFile = await picker.pickImage(source: source, imageQuality: 70);
+            if (pickedFile != null) {
+              final bytes = await pickedFile.readAsBytes();
+              setDialogState(() {
+                imagemXFile = pickedFile;
+                imagemBytesWeb = bytes;
+                fotoBase64 = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+              });
+            }
+          }
+
+          return AlertDialog(
+            backgroundColor: _cardDark,
+            title: const Text('CADASTRAR / DEFINIR SERVIÇO', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Text(
+                    'Digite o nome exatamente como aparece no agendamento.',
+                    style: TextStyle(color: _textSecondary, fontSize: 12),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Seletor de Foto Visual (Câmera ou Galeria)
+                  GestureDetector(
+                    onTap: () {
+                      showModalBottomSheet(
+                        context: context,
+                        backgroundColor: _cardDark,
+                        builder: (_) => SafeArea(
+                          child: Wrap(
+                            children: [
+                              ListTile(
+                                leading: const Icon(Icons.camera_alt, color: Colors.white),
+                                title: const Text('Tirar Foto com a Câmera', style: TextStyle(color: Colors.white)),
+                                onTap: () {
+                                  Navigator.pop(context);
+                                  selecionarImagem(ImageSource.camera);
+                                },
+                              ),
+                              ListTile(
+                                leading: const Icon(Icons.photo_library, color: Colors.white),
+                                title: const Text('Escolher da Galeria', style: TextStyle(color: Colors.white)),
+                                onTap: () {
+                                  Navigator.pop(context);
+                                  selecionarImagem(ImageSource.gallery);
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1C1C1C),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white24),
+                      ),
+                      child: imagemBytesWeb != null
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: Image.memory(imagemBytesWeb!, fit: BoxFit.cover),
+                            )
+                          : Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.add_a_photo, color: _brandRed, size: 28),
+                                const SizedBox(height: 4),
+                                const Text('Foto', style: TextStyle(color: Colors.white54, fontSize: 10)),
+                              ],
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  TextField(
+                    controller: nomeCtrl,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(labelText: 'Nome do Serviço', labelStyle: TextStyle(color: Colors.grey)),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: categoriaSelecionada,
+                    dropdownColor: _cardDark,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(
+                      labelText: 'Categoria',
+                      labelStyle: TextStyle(color: Colors.grey),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'Cabelo', child: Text('Cabelo')),
+                      DropdownMenuItem(value: 'Barba', child: Text('Barba')),
+                      DropdownMenuItem(value: 'Tratamentos', child: Text('Tratamentos')),
+                      DropdownMenuItem(value: 'Química', child: Text('Química')),
+                    ],
+                    onChanged: (v) {
+                      setDialogState(() {
+                        categoriaSelecionada = v ?? 'Cabelo';
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: precoCtrl,
+                    keyboardType: TextInputType.number,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(labelText: 'Preço (Ex: 35.00)', labelStyle: TextStyle(color: Colors.grey)),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: nomeCtrl,
-              style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(labelText: 'Nome do Serviço', labelStyle: TextStyle(color: Colors.grey)),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: precoCtrl,
-              keyboardType: TextInputType.number,
-              style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(labelText: 'Preço (Ex: 35.00)', labelStyle: TextStyle(color: Colors.grey)),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: _brandRed),
-            onPressed: () {
-              final preco = double.tryParse(precoCtrl.text.trim().replaceAll(',', '.'));
-              if (nomeCtrl.text.trim().isNotEmpty && preco != null) {
-                Navigator.pop(ctx);
-                _salvarPrecoAPI(nomeCtrl.text.trim(), preco);
-              } else {
-                _mostrarSnack('Preencha nome e um preço válido.');
-              }
-            },
-            child: const Text('Salvar', style: TextStyle(color: Colors.white)),
-          ),
-        ],
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: _brandRed),
+                onPressed: () {
+                  final preco = double.tryParse(precoCtrl.text.trim().replaceAll(',', '.'));
+                  if (nomeCtrl.text.trim().isNotEmpty && preco != null) {
+                    Navigator.pop(ctx);
+                    _salvarPrecoAPI(
+                      nomeCtrl.text.trim(), 
+                      preco, 
+                      categoriaSelecionada, 
+                      fotoBase64
+                    );
+                  } else {
+                    _mostrarSnack('Preencha nome e um preço válido.');
+                  }
+                },
+                child: const Text('Salvar', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -2765,7 +3059,7 @@ class _GerenciarServicosScreenState extends State<GerenciarServicosScreen> {
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: _brandRed,
         icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text('Novo Preço', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        label: const Text('Novo Serviço', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         onPressed: _abrirDialogoNovoServico,
       ),
       body: _isLoading
@@ -2790,6 +3084,11 @@ class _GerenciarServicosScreenState extends State<GerenciarServicosScreen> {
                     itemBuilder: (context, index) {
                       final s = _servicos[index];
                       final double preco = double.tryParse(s['preco'].toString()) ?? 0;
+                      final String categoria = s['categoria'] ?? 'Geral';
+                      final String nome = s['nome'] ?? '';
+                      final String foto = s['foto'] ?? '';
+                      final String primeiraLetra = nome.isNotEmpty ? nome.substring(0, 1).toUpperCase() : 'S';
+
                       return Container(
                         margin: const EdgeInsets.only(bottom: 10),
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -2800,10 +3099,50 @@ class _GerenciarServicosScreenState extends State<GerenciarServicosScreen> {
                         ),
                         child: Row(
                           children: [
+                            Container(
+                              width: 45,
+                              height: 45,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1C1C1C),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.white10),
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: foto.trim().isNotEmpty
+                                    ? (foto.startsWith('data:image')
+                                        ? Image.memory(base64Decode(foto.split(',')[1]), fit: BoxFit.cover)
+                                        : Image.network(foto, fit: BoxFit.cover, errorBuilder: (_,__,___) => Center(child: Text(primeiraLetra, style: TextStyle(color: _brandRed, fontWeight: FontWeight.bold, fontSize: 18)))))
+                                    : Center(
+                                        child: Text(
+                                          primeiraLetra,
+                                          style: TextStyle(color: _brandRed, fontWeight: FontWeight.bold, fontSize: 18),
+                                        ),
+                                      ),
+                              ),
+                            ),
+                            const SizedBox(width: 14),
                             Expanded(
-                              child: Text(
-                                s['nome'] ?? '',
-                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    nome,
+                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: _brandRed.withOpacity(0.15),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      categoria.toUpperCase(),
+                                      style: TextStyle(color: _brandRed, fontSize: 10, fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                             Text(

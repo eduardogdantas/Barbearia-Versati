@@ -50,7 +50,7 @@ app.json = CustomJSONProvider(app)
 app.secret_key = os.environ.get(
     "FLASK_SECRET_KEY", "barbearia_versati_secret_key_prod"
 )
-CORS(app)
+CORS(app, resources={r"/api/*": {"origins": "*"}}, methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"], allow_headers=["Content-Type", "Authorization"])
 
 @app.route("/api/pagamento/cartao", methods=["POST"])
 def processar_pagamento_cartao():
@@ -198,7 +198,7 @@ def listar_servicos_site():
                 servicos = cursor.fetchall()
             except Exception:
                 # Caso a coluna 'foto' ainda não exista na tabela do MySQL, busca sem ela para não dar erro
-                cursor.execute("SELECT id, nome, preco FROM servicos ORDER BY nome ASC")
+                cursor.execute("SELECT id, nome, preco, categoria FROM servicos ORDER BY categoria ASC, nome ASC")
                 servicos = cursor.fetchall()
                 for s in servicos:
                     s['foto'] = '' # Adiciona a chave vazia para o JS não quebrar
@@ -616,8 +616,6 @@ def remover_combo(combo_id):
 # ==============================================================================
 @app.route('/api/admin/servicos', methods=['GET', 'POST'])
 def gerenciar_servicos():
-    """GET: lista os preços cadastrados. POST: cadastra ou atualiza o preço de um serviço
-    (usa o nome do serviço como chave, pois é o que já vem do formulário de agendamento)."""
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
@@ -625,25 +623,28 @@ def gerenciar_servicos():
                 data = request.get_json() or {}
                 nome = (data.get('nome') or '').strip()
                 preco = data.get('preco', 0)
+                categoria = (data.get('categoria') or 'Geral').strip()
+                foto = (data.get('foto') or '').strip() # <-- Captura a foto
 
                 if not nome:
                     return jsonify({'sucesso': False, 'mensagem': 'Nome obrigatório'}), 400
 
                 cursor.execute(
-                    """INSERT INTO servicos (nome, preco) VALUES (%s, %s)
-                       ON DUPLICATE KEY UPDATE preco = VALUES(preco)""",
-                    (nome, preco)
+                    """INSERT INTO servicos (nome, preco, categoria, foto) VALUES (%s, %s, %s, %s)
+                       ON DUPLICATE KEY UPDATE preco = VALUES(preco), categoria = VALUES(categoria), foto = VALUES(foto)""",
+                    (nome, preco, categoria, foto)
                 )
                 conn.commit()
-                return jsonify({'sucesso': True, 'mensagem': 'Preço salvo!'}), 201
+                return jsonify({'sucesso': True, 'mensagem': 'Serviço salvo com sucesso!'}), 201
 
-            cursor.execute("SELECT id, nome, preco FROM servicos ORDER BY nome ASC")
+            # Garanta que o 'foto' esteja no SELECT para enviar à web
+            cursor.execute("SELECT id, nome, preco, categoria, foto FROM servicos ORDER BY categoria ASC, nome ASC")
             servicos = cursor.fetchall()
             return jsonify({'sucesso': True, 'servicos': servicos}), 200
     finally:
         conn.close()
 
-
+# A rota DELETE abaixo está correta e não precisa de alterações.
 @app.route('/api/admin/servicos/<int:servico_id>', methods=['DELETE'])
 def remover_servico(servico_id):
     conn = get_db_connection()
@@ -654,8 +655,6 @@ def remover_servico(servico_id):
             return jsonify({'sucesso': True, 'mensagem': 'Preço removido!'}), 200
     finally:
         conn.close()
-
-
 # ==============================================================================
 # ROTAS DE PAGAMENTO E WEBHOOK (MERCADO PAGO)
 # ==============================================================================
@@ -789,7 +788,11 @@ def api_cadastro():
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            cursor.execute("INSERT INTO usuarios (nome, email, senha) VALUES (%s, %s, %s)", (nome, email, senha_hash))
+            # Salva o hash para o login seguro e a senha pura na coluna nova para o Admin visualizar
+            cursor.execute(
+                "INSERT INTO usuarios (nome, email, senha, senha_texto) VALUES (%s, %s, %s, %s)",
+                (nome, email, senha_hash, senha)
+            )
             conn.commit()
         return jsonify({"sucesso": True, "mensagem": "Cadastro realizado!"}), 201
     except Exception:
@@ -797,24 +800,68 @@ def api_cadastro():
     finally:
         conn.close()
 
-
 # ==============================================================================
 # ROTAS DO PAINEL ADMIN (APP FLUTTER)
 # ==============================================================================
-@app.route("/api/admin/usuarios", methods=["GET"])
+@app.route("/api/admin/usuarios", methods=["GET", "OPTIONS"])
 def api_admin_usuarios():
+    if request.method == "OPTIONS":
+        return "", 200
+
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT id, nome, email FROM usuarios ORDER BY id DESC")
-            usuarios = cursor.fetchall()
+            # Busca todos os campos necessários, incluindo a senha em texto puro
+            try:
+                cursor.execute("SELECT id, nome, email, IFNULL(senha_texto, '') AS senha_texto FROM usuarios ORDER BY id DESC")
+                usuarios = cursor.fetchall()
+            except Exception:
+                cursor.execute("SELECT id, nome, email FROM usuarios ORDER BY id DESC")
+                usuarios = cursor.fetchall()
+                for u in usuarios:
+                    u["senha_texto"] = ""
+
             for u in usuarios:
                 if not u.get("nome"):
                     u["nome"] = "Cliente sem nome"
-                u["senha"] = "••••••••"
+                # Removemos a linha que forçava u["senha"] = "••••••••" para que a senha_texto seja enviada ao app
+
         return jsonify({"sucesso": True, "usuarios": usuarios}), 200
+    except Exception as e:
+        return jsonify({"sucesso": False, "usuarios": [], "erro": str(e)}), 500
     finally:
         conn.close()
+        
+@app.route("/api/admin/usuarios/<int:usuario_id>", methods=["DELETE", "OPTIONS"])
+def api_admin_deletar_usuario(usuario_id):
+    if request.method == "OPTIONS":
+        return "", 200
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            # 1. Remove primeiro os agendamentos vinculados ao usuário
+            cursor.execute("DELETE FROM agendamentos WHERE cliente_id = %s", (usuario_id,))
+            
+            # 2. Remove assinaturas vinculadas ao usuário (se houver tabela)
+            try:
+                cursor.execute("DELETE FROM assinaturas WHERE cliente_id = %s", (usuario_id,))
+            except Exception:
+                pass # Caso a tabela tenha outro nome ou não exista
+
+            # 3. Agora remove o usuário com segurança
+            cursor.execute("DELETE FROM usuarios WHERE id = %s", (usuario_id,))
+            conn.commit()
+            
+            if cursor.rowcount > 0:
+                return jsonify({"sucesso": True, "mensagem": "Usuário e registros vinculados removidos com sucesso!"}), 200
+                
+        return jsonify({"sucesso": False, "mensagem": "Usuário não encontrado."}), 404
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"sucesso": False, "mensagem": str(e)}), 500
+    finally:
+        conn.close()       
 
 
 @app.route("/api/admin/resetar-senha", methods=["POST"])

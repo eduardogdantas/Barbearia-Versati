@@ -110,32 +110,187 @@
         }
         input[type="tel"]:focus { border-color: var(--brass); }
 
-        /* Cards de Seleção */
+        /* --- ESTILOS PROFISSIONAIS PARA AS ABAS (TABS) --- */
+        #categorias-container {
+            display: flex;
+            gap: 0;
+            margin-bottom: 28px;
+            padding-bottom: 2px;
+            border-bottom: 2px solid var(--stroke);
+            overflow-x: auto;
+            scrollbar-width: none;
+        }
+        #categorias-container::-webkit-scrollbar {
+            display: none;
+        }
+
+        .cat-chip {
+            background: transparent;
+            border: none;
+            color: var(--text-dim);
+            padding: 12px 20px;
+            border-radius: 0;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.3s ease;
+            position: relative;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-family: 'Work Sans', sans-serif;
+        }
+
+        .cat-chip:hover {
+            color: var(--text);
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .cat-chip.ativo {
+            color: #fff;
+            font-weight: 700;
+            background: transparent;
+        }
+
+        .cat-chip::after {
+            content: '';
+            position: absolute;
+            left: 50%;
+            bottom: -2px;
+            width: 0;
+            height: 3px;
+            background-color: var(--brass);
+            transition: all 0.3s ease-in-out;
+            transform: translateX(-50%);
+        }
+
+        .cat-chip.ativo::after {
+            width: 100%;
+        }
+
+        /* --- LAYOUT EM LISTA VERTICAL MODERNA PARA OS SERVIÇOS --- */
+        #grid-servicos {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 24px;
+        }
+
+        .card-opcao {
+            background: var(--bg);
+            border: 1px solid var(--stroke);
+            border-radius: 10px;
+            padding: 14px 18px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .card-opcao:hover {
+            border-color: var(--brass);
+            background: var(--bg-card-hover);
+        }
+
+        .card-opcao.selecionado {
+            border-color: var(--brass);
+            background: rgba(216, 31, 44, 0.08);
+        }
+
+        .servico-info-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .card-img-wrapper {
+            width: 45px;
+            height: 45px;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #1c1c1c;
+            border: 1px solid var(--stroke);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .card-img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .servico-placeholder {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #1c1c1c 0%, #0a0a0a 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Anton', sans-serif;
+            font-size: 1rem;
+            color: var(--brass);
+        }
+
+        .servico-textos {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            text-align: left;
+        }
+        .card-titulo {
+            font-family: 'Anton', sans-serif;
+            font-size: 1.05rem;
+            text-transform: uppercase;
+            letter-spacing: 0.02em;
+        }
+        .card-sub {
+            font-size: 0.85rem;
+            color: var(--brass);
+            font-weight: 600;
+        }
+
+        .radio-seletor {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            border: 2px solid var(--stroke);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+
+        .card-opcao.selecionado .radio-seletor {
+            border-color: var(--brass);
+            background: var(--brass);
+        }
+
+        .radio-seletor::after {
+            content: '';
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #fff;
+            transform: scale(0);
+            transition: transform 0.2s;
+        }
+
+        .card-opcao.selecionado .radio-seletor::after {
+            transform: scale(1);
+        }
+
+        /* Grades genéricas (para outras telas como Profissionais) */
         .grid-selecao {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
             gap: 12px;
             margin-bottom: 24px;
         }
-        .card-opcao {
-            background: var(--bg);
-            border: 1px solid var(--stroke);
-            border-radius: 10px;
-            padding: 16px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.2s;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 8px;
-        }
-        .card-opcao:hover { border-color: var(--brass); background: var(--bg-card-hover); }
-        .card-opcao.selecionado {
-            border-color: var(--brass);
-            background: rgba(216, 31, 44, 0.1);
-        }
-        
+
         /* Avatar de Boneco para Barbeiros */
         .avatar-boneco {
             width: 65px;
@@ -153,39 +308,6 @@
             height: 38px;
             fill: currentColor;
         }
-
-        /* Foto do Serviço ou Fundo Estilizado */
-        .card-img-wrapper {
-            width: 65px;
-            height: 65px;
-            border-radius: 8px;
-            overflow: hidden;
-            background: #1c1c1c;
-            border: 1px solid var(--stroke);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .card-img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-        .servico-placeholder {
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(135deg, #1c1c1c 0%, #0a0a0a 100%);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-family: 'Anton', sans-serif;
-            font-size: 1.2rem;
-            color: var(--brass);
-            border: 1px dashed var(--stroke);
-        }
-
-        .card-titulo { font-family: 'Anton', sans-serif; font-size: 1rem; text-transform: uppercase; }
-        .card-sub { font-size: 0.78rem; color: var(--text-dim); }
 
         /* Carrossel de Dias */
         .dias-grid {
@@ -300,7 +422,7 @@
                 <label style="margin-top: 10px;">2. Selecione o Profissional</label>
                 <div class="grid-selecao">
                     {% for b in barbeiros %}
-                    <div class="card-opcao" onclick="selecionarBarbeiro('{{ b.id }}', this)">
+                    <div class="card-opcao" style="flex-direction: column; text-align: center;" onclick="selecionarBarbeiro('{{ b.id }}', this)">
                         <div class="avatar-boneco">
                             <svg viewBox="0 0 24 24">
                                 <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/>
@@ -317,10 +439,18 @@
                 </div>
             </div>
 
-            <!-- ETAPA 2: Selecionar Serviço -->
+            <!-- ETAPA 2: Selecionar Serviço com Categorias e Lista Moderna -->
             <div class="etapa-bloco" id="etapa-2">
                 <label>Escolha o Serviço</label>
-                <div class="grid-selecao" id="grid-servicos"></div>
+                
+                <!-- Abas de Categorias Modernas -->
+                <div id="categorias-container">
+                    <!-- Preenchido dinamicamente via JS -->
+                </div>
+
+                <!-- Lista de Serviços -->
+                <div id="grid-servicos"></div>
+                
                 <div class="botoes-etapa">
                     <button type="button" class="btn btn-outline" onclick="mudarEtapa(1)">Voltar</button>
                     <button type="button" class="btn btn-primary" id="btnAvancar2" onclick="mudarEtapa(3)" disabled>Avançar</button>
@@ -347,11 +477,11 @@
             <div class="etapa-bloco" id="etapa-4">
                 <label>Forma de Pagamento</label>
                 <div class="grid-selecao">
-                    <div class="card-opcao selecionado" id="opt-presencial" onclick="selecionarPagamento('presencial')">
+                    <div class="card-opcao selecionado" style="flex-direction: column; text-align: center;" id="opt-presencial" onclick="selecionarPagamento('presencial')">
                         <div class="card-titulo">Presencial</div>
                         <div class="card-sub">Pague no balcão ao finalizar.</div>
                     </div>
-                    <div class="card-opcao" id="opt-vip" onclick="selecionarPagamento('vip')">
+                    <div class="card-opcao" style="flex-direction: column; text-align: center;" id="opt-vip" onclick="selecionarPagamento('vip')">
                         <div class="card-titulo" style="color: #4caf50;">Plano VIP</div>
                         <div class="card-sub">Utilizar benefícios da assinatura.</div>
                     </div>
@@ -367,6 +497,8 @@
 
     <script>
         let etapaAtual = 1;
+        let listaGlobalServicos = [];
+        let categoriaAtiva = 'Todos';
 
         function mudarEtapa(novaEtapa) {
             document.querySelectorAll('.etapa-bloco').forEach(el => el.classList.remove('ativa'));
@@ -394,7 +526,6 @@
             const barbeiroId = document.getElementById('barbeiro_id').value;
             const btn = document.getElementById('btnAvancar1');
 
-            // Libera o botão apenas se houver telefone preenchido e barbeiro selecionado
             if (telefone.length >= 8 && barbeiroId !== "") {
                 btn.disabled = false;
             } else {
@@ -411,40 +542,95 @@
 
         async function carregarServicosEtapa2() {
             const grid = document.getElementById('grid-servicos');
+            const catContainer = document.getElementById('categorias-container');
+            
             try {
                 const res = await fetch('/api/servicos');
                 const data = await res.json();
                 
                 if (data.sucesso && data.servicos && data.servicos.length > 0) {
-                    grid.innerHTML = '';
-                    data.servicos.forEach(s => {
-                        const precoFmt = Number(s.preco).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-                        
-                        const card = document.createElement('div');
-                        card.className = 'card-opcao';
-                        card.onclick = () => selecionarServico(s.nome, card);
-                        
-                        let conteudoVisual = '';
-                        if (s.foto && s.foto.trim() !== '') {
-                            conteudoVisual = `<div class="card-img-wrapper"><img src="${s.foto}" class="card-img" alt="${s.nome}"></div>`;
-                        } else {
-                            const primeiraLetra = s.nome ? s.nome.charAt(0).toUpperCase() : 'S';
-                            conteudoVisual = `<div class="card-img-wrapper"><div class="servico-placeholder">${primeiraLetra}</div></div>`;
+                    listaGlobalServicos = data.servicos;
+                    
+                    listaGlobalServicos.forEach(s => {
+                        if (!s.categoria || s.categoria.trim() === '') {
+                            s.categoria = 'Geral';
                         }
-
-                        card.innerHTML = `
-                            ${conteudoVisual}
-                            <div class="card-titulo">${s.nome}</div>
-                            <div class="card-sub">${precoFmt}</div>
-                        `;
-                        grid.appendChild(card);
                     });
+
+                    const categoriasSet = new Set(['Todos']);
+                    listaGlobalServicos.forEach(s => {
+                        categoriasSet.add(s.categoria);
+                    });
+                    
+                    catContainer.innerHTML = '';
+                    categoriasSet.forEach(cat => {
+                        const chip = document.createElement('div');
+                        chip.className = `cat-chip ${cat === categoriaAtiva ? 'ativo' : ''}`;
+                        chip.textContent = cat;
+                        chip.onclick = () => {
+                            categoriaAtiva = cat;
+                            document.querySelectorAll('.cat-chip').forEach(c => c.classList.remove('ativo'));
+                            chip.classList.add('ativo');
+                            renderizarGridServicos();
+                        };
+                        catContainer.appendChild(chip);
+                    });
+
+                    renderizarGridServicos();
                 } else {
-                    grid.innerHTML = '<p style="color: var(--text-dim); grid-column: span 2; text-align: center;">Nenhum serviço cadastrado.</p>';
+                    grid.innerHTML = '<p style="color: var(--text-dim); text-align: center; padding: 20px;">Nenhum serviço cadastrado.</p>';
                 }
             } catch (e) {
                 console.error("Erro ao carregar serviços", e);
             }
+        }
+
+        function renderizarGridServicos() {
+            const grid = document.getElementById('grid-servicos');
+            grid.innerHTML = '';
+
+            const servicosFiltrados = categoriaAtiva === 'Todos' 
+                ? listaGlobalServicos 
+                : listaGlobalServicos.filter(s => s.categoria === categoriaAtiva);
+
+            if (servicosFiltrados.length === 0) {
+                grid.innerHTML = '<p style="color: var(--text-dim); text-align: center; padding: 20px;">Nenhum serviço nesta categoria.</p>';
+                return;
+            }
+
+            servicosFiltrados.forEach(s => {
+                const precoFmt = Number(s.preco).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                
+                const card = document.createElement('div');
+                card.className = 'card-opcao';
+                
+                const servicoSelecionadoAtual = document.getElementById('servico').value;
+                if (servicoSelecionadoAtual === s.nome) {
+                    card.classList.add('selecionado');
+                }
+
+                card.onclick = () => selecionarServico(s.nome, card);
+                
+                let conteudoVisual = '';
+                if (s.foto && s.foto.trim() !== '') {
+                    conteudoVisual = `<div class="card-img-wrapper"><img src="${s.foto}" class="card-img" alt="${s.nome}"></div>`;
+                } else {
+                    const primeiraLetra = s.nome ? s.nome.charAt(0).toUpperCase() : 'S';
+                    conteudoVisual = `<div class="card-img-wrapper"><div class="servico-placeholder">${primeiraLetra}</div></div>`;
+                }
+
+                card.innerHTML = `
+                    <div class="servico-info-wrapper">
+                        ${conteudoVisual}
+                        <div class="servico-textos">
+                            <div class="card-titulo">${s.nome}</div>
+                            <div class="card-sub">${precoFmt}</div>
+                        </div>
+                    </div>
+                    <div class="radio-seletor"></div>
+                `;
+                grid.appendChild(card);
+            });
         }
 
         function selecionarServico(nomeServico, elemento) {
