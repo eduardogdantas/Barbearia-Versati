@@ -6,11 +6,18 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 // ==============================================================================
-// CONFIGURAÇÃO CENTRAL DA API
+// CONFIGURAÇÃO CENTRAL DA API E SEGURANÇA
 // ==============================================================================
 class AppConfig {
-  static const String baseUrl = 'http://192.168.0.8:5000';
+  static const String baseUrl = 'http://192.168.0.13:5000';
   static const String apiUrl = '$baseUrl/api';
+  static const String adminToken = 'SEU_TOKEN_SECRETO_AQUI'; 
+
+  // Helper centralizado para injetar o token de segurança nas requisições admin
+  static Map<String, String> get adminHeaders => {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $adminToken',
+      };
 }
 
 void main() {
@@ -572,7 +579,10 @@ class _HistoricoAtendimentosScreenState extends State<HistoricoAtendimentosScree
     final dataFormatada = "${_dataSelecionada.year}-${_dataSelecionada.month.toString().padLeft(2, '0')}-${_dataSelecionada.day.toString().padLeft(2, '0')}";
 
     try {
-      final response = await http.get(Uri.parse('$_baseUrl/admin/dados?data=$dataFormatada'));
+      final response = await http.get(
+        Uri.parse('$_baseUrl/admin/dados?data=$dataFormatada'),
+        headers: AppConfig.adminHeaders,
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (mounted) {
@@ -855,7 +865,6 @@ class _FinanceiroViewState extends State<FinanceiroView> {
     super.initState();
     _carregarDados(manual: true);
 
-    // Atualização em tempo real a cada 5 segundos de forma silenciosa
     _timerTempoReal = Timer.periodic(const Duration(seconds: 5), (_) {
       _carregarDados(manual: false);
     });
@@ -873,7 +882,10 @@ class _FinanceiroViewState extends State<FinanceiroView> {
     }
 
     try {
-      final response = await http.get(Uri.parse(_apiUrl));
+      final response = await http.get(
+        Uri.parse(_apiUrl),
+        headers: AppConfig.adminHeaders,
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (mounted) {
@@ -1417,9 +1429,6 @@ class _GerenciarUsuariosScreenState extends State<GerenciarUsuariosScreen> {
 
   List<dynamic> _usuarios = [];
   bool _isLoading = true;
-  
-  // Mapa para controlar quais IDs de usuários estão com a senha visível
-  final Map<int, bool> _senhasVisiveis = {};
 
   final String _apiUrl = '${AppConfig.apiUrl}/admin/usuarios';
 
@@ -1433,7 +1442,10 @@ class _GerenciarUsuariosScreenState extends State<GerenciarUsuariosScreen> {
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
-      final response = await http.get(Uri.parse(_apiUrl));
+      final response = await http.get(
+        Uri.parse(_apiUrl),
+        headers: AppConfig.adminHeaders,
+      );
       if (!mounted) return;
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -1456,7 +1468,7 @@ class _GerenciarUsuariosScreenState extends State<GerenciarUsuariosScreen> {
     try {
       final response = await http.post(
         Uri.parse('${AppConfig.apiUrl}/admin/resetar-senha'),
-        headers: {'Content-Type': 'application/json'},
+        headers: AppConfig.adminHeaders,
         body: jsonEncode({
           'usuario_id': usuarioId,
           'nova_senha': novaSenha,
@@ -1480,7 +1492,10 @@ class _GerenciarUsuariosScreenState extends State<GerenciarUsuariosScreen> {
 
   Future<void> _removerUsuarioAPI(int usuarioId) async {
     try {
-      final response = await http.delete(Uri.parse('$_apiUrl/$usuarioId'));
+      final response = await http.delete(
+        Uri.parse('$_apiUrl/$usuarioId'),
+        headers: AppConfig.adminHeaders,
+      );
       if (!mounted) return;
       if (response.statusCode == 200) {
         _mostrarSnack('🗑️ Usuário e registros vinculados removidos!');
@@ -1641,15 +1656,6 @@ class _GerenciarUsuariosScreenState extends State<GerenciarUsuariosScreen> {
 
   Widget _buildUsuarioCard(Map<String, dynamic> u) {
     final int id = u['id'];
-    final bool senhaVisivel = _senhasVisiveis[id] ?? false;
-    
-    // Pega o valor enviado pelo Flask
-    final String senhaCadastrada = u['senha_texto'] ?? '';
-    
-    // Se estiver visível mostra a senha limpa, senão mostra os pontos
-    final String senhaExibida = senhaVisivel 
-        ? (senhaCadastrada.isNotEmpty ? senhaCadastrada : 'Não informada') 
-        : '••••••••';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1708,45 +1714,18 @@ class _GerenciarUsuariosScreenState extends State<GerenciarUsuariosScreen> {
           ),
           const SizedBox(height: 8),
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Icon(Icons.lock_outline, size: 16, color: _brandRed),
-              const SizedBox(width: 8),
-              Text(
-                'Senha: ',
-                style: TextStyle(color: _textSecondary, fontSize: 14, fontWeight: FontWeight.bold),
+              Row(
+                children: [
+                  Icon(Icons.lock_outline, size: 16, color: _brandRed),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Gerenciar Senha do Usuário',
+                    style: TextStyle(color: _textSecondary, fontSize: 13),
+                  ),
+                ],
               ),
-              Expanded(
-                child: Wrap(
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 6,
-                  children: [
-                    Text(
-                      senhaExibida,
-                      style: TextStyle(
-                        color: senhaCadastrada.isEmpty && senhaVisivel ? Colors.orangeAccent : _brandRed,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                      ),
-                    ),
-                    InkWell(
-                      onTap: () {
-                        setState(() {
-                          _senhasVisiveis[id] = !senhaVisivel;
-                        });
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.all(4.0),
-                        child: Icon(
-                          senhaVisivel ? Icons.visibility_off : Icons.visibility,
-                          color: _textSecondary,
-                          size: 16,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
               InkWell(
                 onTap: () => _exibirDialogoResetarSenha(
                   id,
@@ -1808,7 +1787,10 @@ class _GerenciarProdutosScreenState extends State<GerenciarProdutosScreen> {
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
-      final response = await http.get(Uri.parse(_apiUrl));
+      final response = await http.get(
+        Uri.parse(_apiUrl),
+        headers: AppConfig.adminHeaders,
+      );
       if (!mounted) return;
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -1831,7 +1813,7 @@ class _GerenciarProdutosScreenState extends State<GerenciarProdutosScreen> {
     try {
       final response = await http.post(
         Uri.parse(_apiUrl),
-        headers: {'Content-Type': 'application/json'},
+        headers: AppConfig.adminHeaders,
         body: jsonEncode({
           'nome': nome, 
           'descricao': descricao, 
@@ -1856,7 +1838,10 @@ class _GerenciarProdutosScreenState extends State<GerenciarProdutosScreen> {
 
   Future<void> _removerProdutoAPI(int produtoId) async {
     try {
-      final response = await http.delete(Uri.parse('$_apiUrl/$produtoId'));
+      final response = await http.delete(
+        Uri.parse('$_apiUrl/$produtoId'),
+        headers: AppConfig.adminHeaders,
+      );
       if (!mounted) return;
       if (response.statusCode == 200) {
         _mostrarSnack('🗑️ Produto removido!');
@@ -1909,7 +1894,6 @@ class _GerenciarProdutosScreenState extends State<GerenciarProdutosScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Seletor de Foto Visual (Câmera ou Galeria)
                   GestureDetector(
                     onTap: () {
                       showModalBottomSheet(
@@ -2152,7 +2136,10 @@ class _GerenciarPacotesScreenState extends State<GerenciarPacotesScreen> {
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
-      final response = await http.get(Uri.parse(_apiUrl));
+      final response = await http.get(
+        Uri.parse(_apiUrl),
+        headers: AppConfig.adminHeaders,
+      );
       if (!mounted) return;
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -2175,7 +2162,7 @@ class _GerenciarPacotesScreenState extends State<GerenciarPacotesScreen> {
     try {
       final response = await http.post(
         Uri.parse(_apiUrl),
-        headers: {'Content-Type': 'application/json'},
+        headers: AppConfig.adminHeaders,
         body: jsonEncode({
           'nome': nome,
           'tipo': tipo,
@@ -2200,7 +2187,10 @@ class _GerenciarPacotesScreenState extends State<GerenciarPacotesScreen> {
 
   Future<void> _removerComboAPI(int comboId) async {
     try {
-      final response = await http.delete(Uri.parse('$_apiUrl/$comboId'));
+      final response = await http.delete(
+        Uri.parse('$_apiUrl/$comboId'),
+        headers: AppConfig.adminHeaders,
+      );
       if (!mounted) return;
       if (response.statusCode == 200) {
         _mostrarSnack('🗑️ Pacote removido!');
@@ -2415,7 +2405,7 @@ class _GerenciarPacotesScreenState extends State<GerenciarPacotesScreen> {
 }
 
 // ==============================================================================
-// GERENCIAR ASSINATURAS (CORRIGIDO)
+// GERENCIAR ASSINATURAS
 // ==============================================================================
 
 class GerenciarAssinaturasScreen extends StatefulWidget {
@@ -2435,7 +2425,7 @@ class _GerenciarAssinaturasScreenState extends State<GerenciarAssinaturasScreen>
   List<dynamic> _planos = [];
   List<dynamic> _planosFiltrados = [];
   bool _isLoading = true;
-  String? _dataFiltro; // Formato YYYY-MM-DD
+  String? _dataFiltro;
 
   @override
   void initState() {
@@ -2447,7 +2437,10 @@ class _GerenciarAssinaturasScreenState extends State<GerenciarAssinaturasScreen>
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
-      final response = await http.get(Uri.parse(_apiUrl));
+      final response = await http.get(
+        Uri.parse(_apiUrl),
+        headers: AppConfig.adminHeaders,
+      );
       if (!mounted) return;
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -2515,7 +2508,7 @@ class _GerenciarAssinaturasScreenState extends State<GerenciarAssinaturasScreen>
     try {
       final response = await http.post(
         Uri.parse('${AppConfig.apiUrl}/admin/cancelar-assinatura'),
-        headers: {'Content-Type': 'application/json'},
+        headers: AppConfig.adminHeaders,
         body: jsonEncode({'assinatura_id': assinaturaId}),
       );
       
@@ -2820,7 +2813,10 @@ class _GerenciarServicosScreenState extends State<GerenciarServicosScreen> {
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
-      final response = await http.get(Uri.parse(_apiUrl));
+      final response = await http.get(
+        Uri.parse(_apiUrl),
+        headers: AppConfig.adminHeaders,
+      );
       if (!mounted) return;
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -2843,7 +2839,7 @@ class _GerenciarServicosScreenState extends State<GerenciarServicosScreen> {
     try {
       final response = await http.post(
         Uri.parse(_apiUrl),
-        headers: {'Content-Type': 'application/json'},
+        headers: AppConfig.adminHeaders,
         body: jsonEncode({
           'nome': nome, 
           'preco': preco,
@@ -2866,7 +2862,10 @@ class _GerenciarServicosScreenState extends State<GerenciarServicosScreen> {
 
   Future<void> _removerServicoAPI(int id) async {
     try {
-      final response = await http.delete(Uri.parse('$_apiUrl/$id'));
+      final response = await http.delete(
+        Uri.parse('$_apiUrl/$id'),
+        headers: AppConfig.adminHeaders,
+      );
       if (!mounted) return;
       if (response.statusCode == 200) {
         _mostrarSnack('🗑️ Removido!');
@@ -2923,7 +2922,6 @@ class _GerenciarServicosScreenState extends State<GerenciarServicosScreen> {
                   ),
                   const SizedBox(height: 16),
                   
-                  // Seletor de Foto Visual (Câmera ou Galeria)
                   GestureDetector(
                     onTap: () {
                       showModalBottomSheet(
@@ -3164,7 +3162,7 @@ class _GerenciarServicosScreenState extends State<GerenciarServicosScreen> {
 }
 
 // ==============================================================================
-// TELA DETALHADA DE AGENDAMENTOS DO PROFISSIONAL (AO CLICAR NO CARD)
+// TELA DETALHADA DE AGENDAMENTOS DO PROFISSIONAL
 // ==============================================================================
 
 class AgendaDetalhesScreen extends StatefulWidget {
@@ -3202,7 +3200,7 @@ class _AgendaDetalhesScreenState extends State<AgendaDetalhesScreen> {
     try {
       final response = await http.post(
         Uri.parse('$_baseUrl/admin/agendamento/$agendamentoId/concluir'),
-        headers: {'Content-Type': 'application/json'},
+        headers: AppConfig.adminHeaders,
       );
       if (!mounted) return;
       if (response.statusCode == 200) {
@@ -3423,7 +3421,10 @@ class _AgendaProfissionalScreenState extends State<AgendaProfissionalScreen> {
     final dataFormatada = "${_dataSelecionada.year}-${_dataSelecionada.month.toString().padLeft(2, '0')}-${_dataSelecionada.day.toString().padLeft(2, '0')}";
 
     try {
-      final response = await http.get(Uri.parse('$_baseUrl/admin/agenda-equipe?data=$dataFormatada'));
+      final response = await http.get(
+        Uri.parse('$_baseUrl/admin/agenda-equipe?data=$dataFormatada'),
+        headers: AppConfig.adminHeaders,
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (mounted) {
@@ -3628,7 +3629,10 @@ class _GerenciarBarbeirosScreenState extends State<GerenciarBarbeirosScreen> {
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
-      final response = await http.get(Uri.parse(_apiUrl));
+      final response = await http.get(
+        Uri.parse(_apiUrl),
+        headers: AppConfig.adminHeaders,
+      );
       if (!mounted) return;
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -3649,7 +3653,7 @@ class _GerenciarBarbeirosScreenState extends State<GerenciarBarbeirosScreen> {
     try {
       final response = await http.post(
         Uri.parse(_apiUrl),
-        headers: {'Content-Type': 'application/json'},
+        headers: AppConfig.adminHeaders,
         body: jsonEncode({
           'nome': nome,
           'cargo': cargo,
@@ -3680,7 +3684,10 @@ class _GerenciarBarbeirosScreenState extends State<GerenciarBarbeirosScreen> {
 
   Future<void> _deletarBarbeiroAPI(int barbeiroId) async {
     try {
-      final response = await http.delete(Uri.parse('$_apiUrl/$barbeiroId'));
+      final response = await http.delete(
+        Uri.parse('$_apiUrl/$barbeiroId'),
+        headers: AppConfig.adminHeaders,
+      );
       if (!mounted) return;
       if (response.statusCode == 200) {
         ScaffoldMessenger.of(context).showSnackBar(

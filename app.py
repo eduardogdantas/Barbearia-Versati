@@ -3,6 +3,8 @@ from decimal import Decimal
 import os
 import re
 import uuid
+import hmac
+import hashlib
 
 import requests
 
@@ -20,19 +22,24 @@ from flask.json.provider import DefaultJSONProvider
 from flask_cors import CORS
 import mercadopago
 from werkzeug.security import check_password_hash, generate_password_hash
+from functools import wraps
 
-# ==============================================================================
-# CONFIGURAÇÃO DO MERCADO PAGO
-# ==============================================================================
-SDK_ACCESS_TOKEN = (
-    "APP_USR-1433568876847921-082910-4bb2fa84bf01678baf504026003cf1fb-3391694524"
-)
-sdk = mercadopago.SDK(SDK_ACCESS_TOKEN)
+sdk = mercadopago.SDK(os.environ.get("MERCADO_PAGO_ACCESS_TOKEN"))
 
+ADMIN_API_TOKEN = os.environ.get("ADMIN_API_TOKEN")
 
-# ==============================================================================
-# CONFIGURAÇÃO DA APLICAÇÃO FLASK
-# ==============================================================================
+def admin_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        auth_header = request.headers.get("Authorization", "")
+        token = auth_header.replace("Bearer ", "").strip()
+        
+        if not ADMIN_API_TOKEN or token != ADMIN_API_TOKEN:
+            return jsonify({"sucesso": False, "mensagem": "Não autorizado"}), 401
+            
+        return f(*args, **kwargs)
+    return wrapper
+
 class CustomJSONProvider(DefaultJSONProvider):
     """Converte objetos Decimal em float para não quebrar a serialização JSON."""
     ensure_ascii = False
@@ -44,13 +51,23 @@ class CustomJSONProvider(DefaultJSONProvider):
 
 
 app = Flask(__name__)
-app.config['JSON_AS_ASCII'] = False
 app.json_provider_class = CustomJSONProvider
-app.json = CustomJSONProvider(app)
 app.secret_key = os.environ.get(
     "FLASK_SECRET_KEY", "barbearia_versati_secret_key_prod"
 )
-CORS(app, resources={r"/api/*": {"origins": "*"}}, methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"], allow_headers=["Content-Type", "Authorization"])
+CORS(
+    app, 
+    resources={
+        r"/api/*": {
+            "origins": [
+                "https://seusite.com.br", 
+                "http://localhost:5000"
+            ]
+        }
+    }, 
+    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"], 
+    allow_headers=["Content-Type", "Authorization"]
+)
 
 @app.route("/api/pagamento/cartao", methods=["POST"])
 def processar_pagamento_cartao():
@@ -60,15 +77,35 @@ def processar_pagamento_cartao():
     nome_plano = dados.get("nome_plano", "Plano Barbearia")
     cliente_id = dados.get("cliente_id") or session.get("cliente_id")
     
-    # Dados do cartão enviados pelo front-end
-    token_cartao = dados.get("token") # Se estiver usando o MercadoPago.js para tokenizar
-    email = dados.get("email", f"comprador_teste_{uuid.uuid4().hex[:6]}@gmail.com")
-    cpf = re.sub(r"\D", "", str(dados.get("cpf", "70069889422")))
+    # Dados obrigatórios vindos do frontend
+    token_cartao = dados.get("token")
+    payment_method_id = dados.get("payment_method_id") # Ex: master, visa
+    email = dados.get("email")
+    cpf_raw = dados.get("cpf")
+
+    if not token_cartao or not payment_method_id or not email or not cpf_raw:
+        return jsonify({
+            "sucesso": False, 
+            "mensagem": "Dados de pagamento incompletos. Informe o cartão, e-mail e CPF."
+        }), 400
+
+    if valor <= 0:
+        return jsonify({
+            "sucesso": False, 
+            "mensagem": "Valor do pagamento inválido."
+        }), 400
+
+    cpf = re.sub(r"\D", "", str(cpf_raw))
+    if len(cpf) != 11:
+        return jsonify({
+            "sucesso": False, 
+            "mensagem": "CPF inválido."
+        }), 400
     
     payment_data = {
         "transaction_amount": valor,
         "description": f"Assinatura {nome_plano} - Barbearia Versati",
-        "payment_method_id": "master", # Ou visa, dependendo do teste
+        "payment_method_id": payment_method_id,
         "token": token_cartao,
         "installments": 1,
         "payer": {
@@ -87,7 +124,6 @@ def processar_pagamento_cartao():
         payment = payment_response.get("response", {})
 
         if payment_response.get("status") in [200, 201] and payment.get("status") == "approved":
-            # Ativa a assinatura direto no banco se aprovado
             data_inicio = datetime.now().date()
             data_renovacao = data_inicio + timedelta(days=30)
             
@@ -115,9 +151,11 @@ def processar_pagamento_cartao():
             }), 400
 
     except Exception as e:
-        return jsonify({"sucesso": False, "mensagem": str(e)}), 500
+        app.logger.error("Erro em processar_pagamento_cartao: %s", e)
+        return jsonify({"sucesso": False, "mensagem": "Erro interno. Tente novamente."}), 500
     
 @app.route('/api/admin/cancelar-assinatura', methods=['POST'])
+@admin_required
 def admin_cancelar_assinatura():
     dados = request.get_json()
     assinatura_id = dados.get('assinatura_id')
@@ -128,7 +166,6 @@ def admin_cancelar_assinatura():
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            # Atualiza o status para 'cancelado' em vez de deletar
             cursor.execute("""
                 UPDATE assinaturas 
                 SET status = 'cancelado' 
@@ -138,11 +175,12 @@ def admin_cancelar_assinatura():
             return jsonify({'sucesso': True, 'mensagem': 'Assinatura cancelada com sucesso!'}), 200
     except Exception as e:
         conn.rollback()
-        return jsonify({'sucesso': False, 'mensagem': str(e)}), 500
+        app.logger.error("Erro em admin_cancelar_assinatura: %s", e)
+        return jsonify({'sucesso': False, 'mensagem': 'Erro interno. Tente novamente.'}), 500
     finally:
         conn.close()
 
-def processar_renovacao_assinatura(usuario_id, cartao_token, valor):
+def processar_renovacao_assinatura(cliente_id, cartao_token, valor):
     url_gateway = "https://api.seugateway.com/v1/cobrancas"
     payload = {
         "token_cartao": cartao_token,
@@ -150,39 +188,33 @@ def processar_renovacao_assinatura(usuario_id, cartao_token, valor):
     }
     
     try:
-        # Faz a chamada para a API do seu gateway de pagamento
         response = requests.post(url_gateway, json=payload, timeout=10)
         dados_resposta = response.json()
-        
-        # Verifica se o pagamento foi aprovado
         pagamento_aprovado = response.status_code == 200 and dados_resposta.get('status') == 'aprovado'
-        
     except Exception as e:
-        print(f"Erro de conexão com o gateway: {e}")
+        app.logger.error("Erro de conexão com o gateway: %s", e)
         pagamento_aprovado = False
 
-    # Atualiza o banco de dados com base no resultado
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         if pagamento_aprovado:
             cursor.execute("""
-                UPDATE assinaturas_clientes 
-                SET status = 'ativo', validade = DATE_ADD(NOW(), INTERVAL 30 DAY) 
-                WHERE usuario_id = %s
-            """, (usuario_id,))
+                UPDATE assinaturas 
+                SET status = 'ativo', data_renovacao = DATE_ADD(CURDATE(), INTERVAL 30 DAY) 
+                WHERE cliente_id = %s
+            """, (cliente_id,))
         else:
-            # Se deu saldo insuficiente ou recusado, altera para inativo
             cursor.execute("""
-                UPDATE assinaturas_clientes 
+                UPDATE assinaturas 
                 SET status = 'inativo' 
-                WHERE usuario_id = %s
-            """, (usuario_id,))
+                WHERE cliente_id = %s
+            """, (cliente_id,))
         
         conn.commit()
     except Exception as e:
         conn.rollback()
-        print(f"Erro ao atualizar banco: {e}")
+        app.logger.error("Erro ao atualizar banco: %s", e)
     finally:
         cursor.close()
         conn.close()
@@ -192,24 +224,24 @@ def listar_servicos_site():
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            # Tenta buscar com a estrutura padrão
             try:
                 cursor.execute("SELECT id, nome, preco, IFNULL(foto, '') AS foto FROM servicos ORDER BY nome ASC")
                 servicos = cursor.fetchall()
             except Exception:
-                # Caso a coluna 'foto' ainda não exista na tabela do MySQL, busca sem ela para não dar erro
                 cursor.execute("SELECT id, nome, preco, categoria FROM servicos ORDER BY categoria ASC, nome ASC")
                 servicos = cursor.fetchall()
                 for s in servicos:
-                    s['foto'] = '' # Adiciona a chave vazia para o JS não quebrar
+                    s['foto'] = ''
 
             return jsonify({'sucesso': True, 'servicos': servicos}), 200
     except Exception as e:
-        return jsonify({'sucesso': False, 'servicos': [], 'erro': str(e)}), 500
+        app.logger.error("Erro em listar_servicos_site: %s", e)
+        return jsonify({'sucesso': False, 'servicos': [], 'mensagem': 'Erro interno. Tente novamente.'}), 500
     finally:
         conn.close()
 
 @app.route("/api/admin/agendamento/<int:id>/concluir", methods=["POST"])
+@admin_required
 def api_concluir_agendamento(id):
     conn = get_db_connection()
     try:
@@ -218,10 +250,14 @@ def api_concluir_agendamento(id):
             conn.commit()
         return jsonify({"sucesso": True, "mensagem": "Atendimento concluído com sucesso!"}), 200
     except Exception as e:
-        return jsonify({"sucesso": False, "erro": str(e)}), 500
+        conn.rollback()
+        app.logger.error("Erro em api_concluir_agendamento: %s", e)
+        return jsonify({"sucesso": False, "mensagem": "Erro interno. Tente novamente."}), 500
     finally:
         conn.close()
+
 @app.route("/api/admin/financeiro", methods=["GET"])
+@admin_required
 def api_admin_financeiro():
     conn = get_db_connection()
     try:
@@ -240,10 +276,13 @@ def api_admin_financeiro():
             "valor_total": float(resultado['valor_total'])
         }), 200
     except Exception as e:
-        return jsonify({"sucesso": False, "total_cortes": 0, "valor_total": 0.0, "erro": str(e)}), 500
+        app.logger.error("Erro em api_admin_financeiro: %s", e)
+        return jsonify({"sucesso": False, "total_cortes": 0, "valor_total": 0.0, "mensagem": "Erro interno. Tente novamente."}), 500
     finally:
         conn.close()
+
 @app.route("/api/admin/agenda-equipe", methods=["GET"])
+@admin_required
 def api_admin_agenda_equipe():
     conn = get_db_connection()
     try:
@@ -251,7 +290,6 @@ def api_admin_agenda_equipe():
             cursor.execute("SELECT id, nome, cargo, especialidade, telefone FROM barbeiros ORDER BY id ASC")
             barbeiros = cursor.fetchall()
 
-            # Adicionado o filtro AND LOWER(a.status) != 'concluido' para sumir da agenda ativa
             cursor.execute("""
                 SELECT DISTINCT a.id, a.barbeiro_id, 
                         IFNULL(a.profissional, '') AS profissional, 
@@ -313,13 +351,14 @@ def api_admin_agenda_equipe():
 
             return jsonify({"sucesso": True, "equipe_agenda": resultado}), 200
     except Exception as e:
-        return jsonify({"sucesso": False, "equipe_agenda": [], "erro": str(e)}), 500
+        app.logger.error("Erro em api_admin_agenda_equipe: %s", e)
+        return jsonify({"sucesso": False, "equipe_agenda": [], "mensagem": "Erro interno. Tente novamente."}), 500
     finally:
         conn.close()
 
 
-# Rota para buscar o histórico de atendimentos concluídos por data
 @app.route("/api/admin/historico", methods=["GET"])
+@admin_required
 def api_admin_historico():
     data_filtro = request.args.get("data", datetime.now().strftime("%Y-%m-%d"))
     conn = get_db_connection()
@@ -343,7 +382,8 @@ def api_admin_historico():
 
         return jsonify({"sucesso": True, "historico": historico}), 200
     except Exception as e:
-        return jsonify({"sucesso": False, "historico": [], "erro": str(e)}), 500
+        app.logger.error("Erro em api_admin_historico: %s", e)
+        return jsonify({"sucesso": False, "historico": [], "mensagem": "Erro interno. Tente novamente."}), 500
     finally:
         conn.close()
 
@@ -374,7 +414,8 @@ def api_agendamentos_por_barbeiro(barbeiro_id):
                 
             return jsonify({"sucesso": True, "agendamentos": agendamentos}), 200
     except Exception as e:
-        return jsonify({"sucesso": False, "agendamentos": [], "erro": str(e)}), 500
+        app.logger.error("Erro em api_agendamentos_por_barbeiro: %s", e)
+        return jsonify({"sucesso": False, "agendamentos": [], "mensagem": "Erro interno. Tente novamente."}), 500
     finally:
         conn.close()
 
@@ -413,7 +454,7 @@ def ativar_assinatura_banco(cliente_id, nome_plano, preco=0.0):
             if existente:
                 sql = """
                     UPDATE assinaturas 
-                    SET nome_plano = %s, preco = %s, status = 'Ativo', data_inicio = %s, data_renovacao = %s
+                    SET nome_plano = %s, preco = %s, status = 'ativo', data_inicio = %s, data_renovacao = %s
                     WHERE cliente_id = %s
                 """
                 cursor.execute(
@@ -422,7 +463,7 @@ def ativar_assinatura_banco(cliente_id, nome_plano, preco=0.0):
             else:
                 sql = """
                     INSERT INTO assinaturas (cliente_id, nome_plano, preco, status, data_inicio, data_renovacao)
-                    VALUES (%s, %s, %s, 'Ativo', %s, %s)
+                    VALUES (%s, %s, %s, 'ativo', %s, %s)
                 """
                 cursor.execute(
                     sql, (cliente_id, nome_plano, preco, data_inicio, data_renovacao)
@@ -433,10 +474,8 @@ def ativar_assinatura_banco(cliente_id, nome_plano, preco=0.0):
         conn.close()
 
 
-# ==============================================================================
-# ROTAS DA EQUIPE DE BARBEIROS (INTEGRAÇÃO WEB E APP)
-# ==============================================================================
 @app.route('/api/admin/barbeiros', methods=['GET', 'POST'])
+@admin_required
 def gerenciar_barbeiros():
     conn = get_db_connection()
     try:
@@ -460,7 +499,11 @@ def gerenciar_barbeiros():
 
             cursor.execute("SELECT id, nome, cargo, especialidade, telefone FROM barbeiros ORDER BY id ASC")
             barbeiros = cursor.fetchall()
-            return jsonify({'sucesso': True, 'barbeiros': barbearia_compativel(barbeiros)}), 200
+            return jsonify({'sucesso': True, 'barbeiros': barbeiros}), 200
+    except Exception as e:
+        conn.rollback()
+        app.logger.error("Erro em gerenciar_barbeiros: %s", e)
+        return jsonify({'sucesso': False, 'mensagem': 'Erro interno. Tente novamente.'}), 500
     finally:
         conn.close()
 
@@ -469,6 +512,7 @@ def barbearia_compativel(lista):
 
 
 @app.route('/api/admin/barbeiros/<int:barbeiro_id>', methods=['DELETE'])
+@admin_required
 def deletar_barbeiro(barbeiro_id):
     conn = get_db_connection()
     try:
@@ -476,15 +520,34 @@ def deletar_barbeiro(barbeiro_id):
             cursor.execute("DELETE FROM barbeiros WHERE id = %s", (barbeiro_id,))
             conn.commit()
             return jsonify({'sucesso': True, 'mensagem': 'Removido com sucesso!'}), 200
+    except Exception as e:
+        conn.rollback()
+        app.logger.error("Erro em deletar_barbeiro: %s", e)
+        return jsonify({'sucesso': False, 'mensagem': 'Erro interno. Tente novamente.'}), 500
     finally:
         conn.close()
 
 
-# ==============================================================================
-# ROTAS DE PRODUTOS (INTEGRAÇÃO WEB E APP)
-# ==============================================================================
 @app.route('/api/produtos', methods=['GET'])
+def listar_produtos_site():
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            try:
+                cursor.execute(
+                    "SELECT id, nome, descricao, preco, estoque FROM produtos WHERE ativo = 1 ORDER BY nome ASC"
+                )
+            except Exception:
+                cursor.execute(
+                    "SELECT id, nome, categoria AS descricao, preco, estoque FROM produtos WHERE ativo = 1 ORDER BY nome ASC"
+                )
+            produtos = cursor.fetchall()
+            return jsonify({'sucesso': True, 'produtos': produtos}), 200
+    finally:
+        conn.close()
+
 @app.route('/api/admin/produtos', methods=['GET', 'POST'])
+@admin_required
 def gerenciar_produtos():
     conn = get_db_connection()
     try:
@@ -492,7 +555,6 @@ def gerenciar_produtos():
             if request.method == 'POST':
                 data = request.get_json() or {}
                 nome = data.get('nome')
-                # Pega a descrição enviada pelo app, ou usa 'categoria', ou um texto padrão
                 descricao = data.get('descricao') or data.get('categoria') or 'Cuidados profissionais para cabelo e barba.'
                 preco = data.get('preco', 0)
                 estoque = data.get('estoque', 0)
@@ -500,14 +562,12 @@ def gerenciar_produtos():
                 if not nome:
                     return jsonify({'sucesso': False, 'mensagem': 'Nome obrigatório'}), 400
 
-                # Insere o produto com a descrição no banco MySQL
                 try:
                     cursor.execute(
                         "INSERT INTO produtos (nome, descricao, preco, estoque) VALUES (%s, %s, %s, %s)",
                         (nome, descricao, preco, estoque)
                     )
                 except Exception:
-                    # Fallback caso a coluna ainda se chame categoria no banco antigo
                     cursor.execute(
                         "INSERT INTO produtos (nome, categoria, preco, estoque) VALUES (%s, %s, %s, %s)",
                         (nome, descricao, preco, estoque)
@@ -516,7 +576,6 @@ def gerenciar_produtos():
                 conn.commit()
                 return jsonify({'sucesso': True, 'mensagem': 'Produto cadastrado!', 'id': cursor.lastrowid}), 201
 
-            # Busca os produtos para exibir na web e no app
             try:
                 cursor.execute(
                     "SELECT id, nome, descricao, preco, estoque FROM produtos WHERE ativo = 1 ORDER BY nome ASC"
@@ -528,11 +587,16 @@ def gerenciar_produtos():
 
             produtos = cursor.fetchall()
             return jsonify({'sucesso': True, 'produtos': produtos}), 200
+    except Exception as e:
+        conn.rollback()
+        app.logger.error("Erro em gerenciar_produtos: %s", e)
+        return jsonify({'sucesso': False, 'mensagem': 'Erro interno. Tente novamente.'}), 500
     finally:
         conn.close()
 
 
 @app.route('/api/admin/produtos/<int:produto_id>', methods=['PUT', 'DELETE'])
+@admin_required
 def editar_ou_remover_produto(produto_id):
     conn = get_db_connection()
     try:
@@ -556,15 +620,30 @@ def editar_ou_remover_produto(produto_id):
             cursor.execute(f"UPDATE produtos SET {', '.join(campos)} WHERE id = %s", valores)
             conn.commit()
             return jsonify({'sucesso': True, 'mensagem': 'Produto atualizado!'}), 200
+    except Exception as e:
+        conn.rollback()
+        app.logger.error("Erro em editar_ou_remover_produto: %s", e)
+        return jsonify({'sucesso': False, 'mensagem': 'Erro interno. Tente novamente.'}), 500
     finally:
         conn.close()
 
 
-# ==============================================================================
-# ROTAS DE COMBOS / PACOTES (INTEGRAÇÃO WEB E APP)
-# ==============================================================================
 @app.route('/api/combos', methods=['GET'])
+def listar_combos_site():
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """SELECT id, nome, tipo, descricao, sessoes, preco, desconto_percentual
+                   FROM combos WHERE ativo = 1 ORDER BY id DESC"""
+            )
+            combos = cursor.fetchall()
+            return jsonify({'sucesso': True, 'combos': combos}), 200
+    finally:
+        conn.close()
+
 @app.route('/api/admin/combos', methods=['GET', 'POST'])
+@admin_required
 def gerenciar_combos():
     conn = get_db_connection()
     try:
@@ -595,11 +674,19 @@ def gerenciar_combos():
             )
             combos = cursor.fetchall()
             return jsonify({'sucesso': True, 'combos': combos}), 200
+    except Exception as e:
+        conn.rollback()
+        app.logger.error("Erro em gerenciar_combos: %s", e)
+        return jsonify({'sucesso': False, 'mensagem': 'Erro interno. Tente novamente.'}), 500
     finally:
         conn.close()
 
 
+
+
+
 @app.route('/api/admin/combos/<int:combo_id>', methods=['DELETE'])
+@admin_required
 def remover_combo(combo_id):
     conn = get_db_connection()
     try:
@@ -607,14 +694,16 @@ def remover_combo(combo_id):
             cursor.execute("DELETE FROM combos WHERE id = %s", (combo_id,))
             conn.commit()
             return jsonify({'sucesso': True, 'mensagem': 'Combo removido!'}), 200
+    except Exception as e:
+        conn.rollback()
+        app.logger.error("Erro em remover_combo: %s", e)
+        return jsonify({'sucesso': False, 'mensagem': 'Erro interno. Tente novamente.'}), 500
     finally:
         conn.close()
 
 
-# ==============================================================================
-# ROTAS DE PREÇOS DE SERVIÇOS (USADO PELO FINANCEIRO)
-# ==============================================================================
 @app.route('/api/admin/servicos', methods=['GET', 'POST'])
+@admin_required
 def gerenciar_servicos():
     conn = get_db_connection()
     try:
@@ -624,7 +713,7 @@ def gerenciar_servicos():
                 nome = (data.get('nome') or '').strip()
                 preco = data.get('preco', 0)
                 categoria = (data.get('categoria') or 'Geral').strip()
-                foto = (data.get('foto') or '').strip() # <-- Captura a foto
+                foto = (data.get('foto') or '').strip()
 
                 if not nome:
                     return jsonify({'sucesso': False, 'mensagem': 'Nome obrigatório'}), 400
@@ -637,15 +726,18 @@ def gerenciar_servicos():
                 conn.commit()
                 return jsonify({'sucesso': True, 'mensagem': 'Serviço salvo com sucesso!'}), 201
 
-            # Garanta que o 'foto' esteja no SELECT para enviar à web
             cursor.execute("SELECT id, nome, preco, categoria, foto FROM servicos ORDER BY categoria ASC, nome ASC")
             servicos = cursor.fetchall()
             return jsonify({'sucesso': True, 'servicos': servicos}), 200
+    except Exception as e:
+        conn.rollback()
+        app.logger.error("Erro em gerenciar_servicos: %s", e)
+        return jsonify({'sucesso': False, 'mensagem': 'Erro interno. Tente novamente.'}), 500
     finally:
         conn.close()
 
-# A rota DELETE abaixo está correta e não precisa de alterações.
 @app.route('/api/admin/servicos/<int:servico_id>', methods=['DELETE'])
+@admin_required
 def remover_servico(servico_id):
     conn = get_db_connection()
     try:
@@ -653,22 +745,45 @@ def remover_servico(servico_id):
             cursor.execute("DELETE FROM servicos WHERE id = %s", (servico_id,))
             conn.commit()
             return jsonify({'sucesso': True, 'mensagem': 'Preço removido!'}), 200
+    except Exception as e:
+        conn.rollback()
+        app.logger.error("Erro em remover_servico: %s", e)
+        return jsonify({'sucesso': False, 'mensagem': 'Erro interno. Tente novamente.'}), 500
     finally:
         conn.close()
-# ==============================================================================
-# ROTAS DE PAGAMENTO E WEBHOOK (MERCADO PAGO)
-# ==============================================================================
+
+
 @app.route("/api/pagamento/pix", methods=["POST"])
 def processar_pagamento_pix():
     dados = request.get_json() or {}
 
-    valor = float(dados.get("valor", 1.00))
-    nome = dados.get("nome", "Cliente Teste")
-    cliente_id = dados.get("cliente_id") or session.get("cliente_id")
+    valor = float(dados.get("valor", 0.00))
     nome_plano = dados.get("nome_plano", "Plano Barbearia")
+    cliente_id = dados.get("cliente_id") or session.get("cliente_id")
+    
+    # Dados obrigatórios vindos do frontend (sem valores fake hardcoded)
+    email = dados.get("email")
+    cpf_raw = dados.get("cpf")
+    nome = dados.get("nome", "Cliente")
 
-    cpf = re.sub(r"\D", "", str(dados.get("cpf", "70069889422")))
-    email = f"comprador_teste_{uuid.uuid4().hex[:6]}@gmail.com"
+    if not email or not cpf_raw:
+        return jsonify({
+            "sucesso": False,
+            "mensagem": "E-mail e CPF são obrigatórios para gerar o PIX."
+        }), 400
+
+    if valor <= 0:
+        return jsonify({
+            "sucesso": False,
+            "mensagem": "Valor do pagamento inválido."
+        }), 400
+
+    cpf = re.sub(r"\D", "", str(cpf_raw))
+    if len(cpf) != 11:
+        return jsonify({
+            "sucesso": False,
+            "mensagem": "CPF inválido."
+        }), 400
 
     payment_data = {
         "transaction_amount": valor,
@@ -704,7 +819,8 @@ def processar_pagamento_pix():
         }), 200
 
     except Exception as e:
-        return jsonify({"sucesso": False, "mensagem": str(e)}), 500
+        app.logger.error("Erro em processar_pagamento_pix: %s", e)
+        return jsonify({"sucesso": False, "mensagem": "Erro interno. Tente novamente."}), 500
 
 
 @app.route("/api/pagamento/status/<int:pagamento_id>", methods=["GET"])
@@ -712,40 +828,65 @@ def verificar_status_pagamento(pagamento_id):
     try:
         payment_response = sdk.payment().get(pagamento_id)
         payment = payment_response.get("response", {})
+        status_atual = payment.get("status")
+        
         return jsonify({
-            "status": payment.get("status"),
+            "sucesso": True,
+            "status": status_atual,
+            "aprovado": status_atual == "approved",
             "detalhe": payment.get("status_detail"),
-        })
+        }), 200
     except Exception as e:
-        return jsonify({"erro": str(e)}), 500
+        app.logger.error("Erro em verificar_status_pagamento: %s", e)
+        return jsonify({"sucesso": False, "mensagem": "Erro interno. Tente novamente."}), 500
 
 
 @app.route("/api/webhook", methods=["POST"])
 def webhook_mercadopago():
+    x_signature = request.headers.get("X-Signature", "")
+    try:
+        params = dict(p.split("=") for p in x_signature.split(","))
+    except ValueError:
+        return jsonify({"status": "error", "mensagem": "X-Signature inválido"}), 400
+
+    ts, v1 = params.get("ts"), params.get("v1")
+    data_id = request.args.get("data.id") or request.json.get("data", {}).get("id")
+    secret = os.environ.get("MERCADO_PAGO_WEBHOOK_SECRET", "")
+    
+    if not ts or not v1:
+        return jsonify({"status": "error", "mensagem": "Assinatura incompleta"}), 403
+
+    manifest = f"id:{data_id};request-id:{request.headers.get('x-request-id')};ts:{ts};"
+    esperado = hmac.new(secret.encode(), manifest.encode(), hashlib.sha256).hexdigest()
+    
+    if not hmac.compare_digest(esperado, v1):
+        return jsonify({"status": "error", "mensagem": "Assinatura inválida"}), 403
+
     dados = request.get_json() or {}
     tipo_evento = request.args.get("type") or request.args.get("topic") or dados.get("type")
-    pagamento_id = request.args.get("data.id") or request.args.get("id") or dados.get("data", {}).get("id")
 
-    if tipo_evento in ["payment", "order"] and pagamento_id:
+    if tipo_evento in ["payment", "order"] and data_id:
         try:
-            info = sdk.payment().get(pagamento_id).get("response", {})
+            info = sdk.payment().get(data_id).get("response", {})
+            
+            # Aceita estritamente o status 'approved' validado na API do MP
             if info.get("status") == "approved":
                 metadata = info.get("metadata", {})
                 cliente_id = metadata.get("cliente_id")
                 nome_plano = metadata.get("nome_plano")
-                preco = metadata.get("preco", 0.0)
+                
+                transaction_amount = float(info.get("transaction_amount", 0.0))
+                preco_metadata = float(metadata.get("preco", 0.0))
 
-                if cliente_id and nome_plano:
-                    ativar_assinatura_banco(cliente_id, nome_plano, preco)
+                if cliente_id and nome_plano and transaction_amount >= preco_metadata:
+                    ativar_assinatura_banco(cliente_id, nome_plano, transaction_amount)
         except Exception as e:
-            print(f"Erro no Webhook: {e}")
+            app.logger.error("Erro no Webhook: %s", e)
 
+    # Retorna 200 rapidamente para o Mercado Pago não re-enviar o webhook
     return jsonify({"status": "ok"}), 200
 
 
-# ==============================================================================
-# ROTAS DE AUTENTICAÇÃO (API & SESSION)
-# ==============================================================================
 @app.route("/api/login", methods=["POST"])
 def api_login():
     dados = request.get_json() or {}
@@ -788,10 +929,9 @@ def api_cadastro():
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            # Salva o hash para o login seguro e a senha pura na coluna nova para o Admin visualizar
             cursor.execute(
-                "INSERT INTO usuarios (nome, email, senha, senha_texto) VALUES (%s, %s, %s, %s)",
-                (nome, email, senha_hash, senha)
+                "INSERT INTO usuarios (nome, email, senha) VALUES (%s, %s, %s)",
+                (nome, email, senha_hash)
             )
             conn.commit()
         return jsonify({"sucesso": True, "mensagem": "Cadastro realizado!"}), 201
@@ -800,10 +940,8 @@ def api_cadastro():
     finally:
         conn.close()
 
-# ==============================================================================
-# ROTAS DO PAINEL ADMIN (APP FLUTTER)
-# ==============================================================================
 @app.route("/api/admin/usuarios", methods=["GET", "OPTIONS"])
+@admin_required
 def api_admin_usuarios():
     if request.method == "OPTIONS":
         return "", 200
@@ -811,28 +949,22 @@ def api_admin_usuarios():
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            # Busca todos os campos necessários, incluindo a senha em texto puro
-            try:
-                cursor.execute("SELECT id, nome, email, IFNULL(senha_texto, '') AS senha_texto FROM usuarios ORDER BY id DESC")
-                usuarios = cursor.fetchall()
-            except Exception:
-                cursor.execute("SELECT id, nome, email FROM usuarios ORDER BY id DESC")
-                usuarios = cursor.fetchall()
-                for u in usuarios:
-                    u["senha_texto"] = ""
+            cursor.execute("SELECT id, nome, email FROM usuarios ORDER BY id DESC")
+            usuarios = cursor.fetchall()
 
-            for u in usuarios:
-                if not u.get("nome"):
-                    u["nome"] = "Cliente sem nome"
-                # Removemos a linha que forçava u["senha"] = "••••••••" para que a senha_texto seja enviada ao app
+        for u in usuarios:
+            if not u.get("nome"):
+                u["nome"] = "Cliente sem nome"
 
         return jsonify({"sucesso": True, "usuarios": usuarios}), 200
     except Exception as e:
-        return jsonify({"sucesso": False, "usuarios": [], "erro": str(e)}), 500
+        app.logger.error("Erro em api_admin_usuarios: %s", e)
+        return jsonify({"sucesso": False, "usuarios": [], "mensagem": "Erro interno. Tente novamente."}), 500
     finally:
         conn.close()
         
 @app.route("/api/admin/usuarios/<int:usuario_id>", methods=["DELETE", "OPTIONS"])
+@admin_required
 def api_admin_deletar_usuario(usuario_id):
     if request.method == "OPTIONS":
         return "", 200
@@ -840,16 +972,12 @@ def api_admin_deletar_usuario(usuario_id):
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            # 1. Remove primeiro os agendamentos vinculados ao usuário
             cursor.execute("DELETE FROM agendamentos WHERE cliente_id = %s", (usuario_id,))
-            
-            # 2. Remove assinaturas vinculadas ao usuário (se houver tabela)
             try:
                 cursor.execute("DELETE FROM assinaturas WHERE cliente_id = %s", (usuario_id,))
             except Exception:
-                pass # Caso a tabela tenha outro nome ou não exista
+                pass 
 
-            # 3. Agora remove o usuário com segurança
             cursor.execute("DELETE FROM usuarios WHERE id = %s", (usuario_id,))
             conn.commit()
             
@@ -859,12 +987,14 @@ def api_admin_deletar_usuario(usuario_id):
         return jsonify({"sucesso": False, "mensagem": "Usuário não encontrado."}), 404
     except Exception as e:
         conn.rollback()
-        return jsonify({"sucesso": False, "mensagem": str(e)}), 500
+        app.logger.error("Erro em api_admin_deletar_usuario: %s", e)
+        return jsonify({"sucesso": False, "mensagem": "Erro interno. Tente novamente."}), 500
     finally:
-        conn.close()       
+        conn.close()      
 
 
 @app.route("/api/admin/resetar-senha", methods=["POST"])
+@admin_required
 def api_admin_resetar_senha():
     dados = request.get_json() or {}
     usuario_id = dados.get("usuario_id")
@@ -882,11 +1012,16 @@ def api_admin_resetar_senha():
             if cursor.rowcount > 0:
                 return jsonify({"sucesso": True, "mensagem": "Senha atualizada!"}), 200
         return jsonify({"sucesso": False, "mensagem": "Usuário não encontrado."}), 404
+    except Exception as e:
+        conn.rollback()
+        app.logger.error("Erro em api_admin_resetar_senha: %s", e)
+        return jsonify({"sucesso": False, "mensagem": "Erro interno. Tente novamente."}), 500
     finally:
         conn.close()
 
 
 @app.route("/api/admin/dados")
+@admin_required
 def api_admin_dados():
     data_filtro = request.args.get("data", datetime.now().strftime("%Y-%m-%d"))
     conn = get_db_connection()
@@ -930,7 +1065,6 @@ def api_admin_dados():
             cursor.execute("SELECT COUNT(*) as total FROM agendamentos WHERE MONTH(data) = MONTH(CURDATE()) AND YEAR(data) = YEAR(CURDATE())")
             cortes_mensal = cursor.fetchone()["total"]
 
-            # ATUALIZADO: Traz o telefone do agendamento ou do cadastro do usuário
             cursor.execute("""
                 SELECT a.id, a.profissional, a.horario, a.servico, a.preco, 
                        u.nome AS cliente_nome, 
@@ -953,7 +1087,6 @@ def api_admin_dados():
                     nome_servico_chave = str(f.get("servico", "")).strip().lower()
                     preco_servico = precos_por_servico.get(nome_servico_chave, 0.0)
 
-                # Se ainda continuar zero, definimos 0.00 para você notar se o serviço não foi cadastrado nos preços
                 if preco_servico <= 0:
                     preco_servico = 0.00
 
@@ -995,14 +1128,14 @@ def api_admin_dados():
             cursor.execute("""
                 SELECT COALESCE(SUM(preco), 0) AS total
                 FROM assinaturas
-                WHERE status = 'Ativo' AND data_renovacao >= CURDATE()
+                WHERE LOWER(status) = 'ativo' AND data_renovacao >= CURDATE()
             """)
             receita_assinaturas_ativas = float(cursor.fetchone()["total"])
 
             cursor.execute("""
                 SELECT COALESCE(SUM(preco), 0) AS total
                 FROM assinaturas
-                WHERE status = 'Ativo' AND DATE(data_inicio) = CURDATE()
+                WHERE LOWER(status) = 'ativo' AND DATE(data_inicio) = CURDATE()
             """)
             receita_assinaturas_hoje = float(cursor.fetchone()["total"])
 
@@ -1019,8 +1152,8 @@ def api_admin_dados():
         conn.close()
 
 
-
 @app.route("/api/admin/agendamentos/<int:id>/status", methods=["PUT"])
+@admin_required
 def atualizar_status_agendamento(id):
     data = request.get_json() or {}
     novo_status = data.get("status")
@@ -1035,11 +1168,16 @@ def atualizar_status_agendamento(id):
             if cursor.rowcount > 0:
                 return jsonify({"sucesso": True, "mensagem": "Status atualizado!"}), 200
         return jsonify({"sucesso": False, "mensagem": "Agendamento não encontrado."}), 404
+    except Exception as e:
+        conn.rollback()
+        app.logger.error("Erro em atualizar_status_agendamento: %s", e)
+        return jsonify({"sucesso": False, "mensagem": "Erro interno. Tente novamente."}), 500
     finally:
         conn.close()
 
 
 @app.route("/api/admin/cancelar-agendamento/<int:id>", methods=["DELETE"])
+@admin_required
 def api_admin_cancelar_agendamento(id):
     conn = get_db_connection()
     try:
@@ -1047,6 +1185,10 @@ def api_admin_cancelar_agendamento(id):
             cursor.execute("DELETE FROM agendamentos WHERE id = %s", (id,))
             conn.commit()
         return jsonify({"sucesso": True, "mensagem": "Cancelado!"}), 200
+    except Exception as e:
+        conn.rollback()
+        app.logger.error("Erro em api_admin_cancelar_agendamento: %s", e)
+        return jsonify({"sucesso": False, "mensagem": "Erro interno. Tente novamente."}), 500
     finally:
         conn.close()
 
@@ -1055,28 +1197,22 @@ def checkout_plano():
     if "cliente_id" not in session:
         return redirect(url_for("login"))
     
-    # Pega os parâmetros passados pela URL (nome do plano e preço)
     nome_plano = request.args.get("plano", "Plano Barbearia")
     preco = request.args.get("preco", "0.00")
     
-    # Você pode renderizar uma página de checkout ou reutilizar uma existente
     return render_template("checkout_plano.html", plano=nome_plano, preco=preco)
 
 
-# 1. Rota que renderiza o visual com HTML e CSS (o layout bonito)
-# Rota que entrega o arquivo HTML estilizado para o navegador
 @app.route("/planos", methods=["GET"])
 def pagina_planos():
     return render_template("planos.html", cliente_id=session.get("cliente_id"), cliente_nome=session.get("cliente_nome"))
 
-# Rota de API separada para fornecer os dados JSON (se o seu front-end precisar consumir via fetch)
 @app.route('/api/admin/planos-ativos', methods=['GET'])
+@admin_required
 def admin_planos_ativos():
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            # Certifique-se de que NÃO há filtro "WHERE status = 'ativo'" aqui,
-            # para que a web receba tanto os ativos quanto os cancelados, igual ao Flutter!
             cursor.execute("""
                 SELECT 
                     a.id, 
@@ -1093,7 +1229,8 @@ def admin_planos_ativos():
             planos = cursor.fetchall()
             return jsonify({'sucesso': True, 'planos': planos}), 200
     except Exception as e:
-        return jsonify({'sucesso': False, 'planos': [], 'erro': str(e)}), 500
+        app.logger.error("Erro em admin_planos_ativos: %s", e)
+        return jsonify({'sucesso': False, 'planos': [], 'mensagem': 'Erro interno. Tente novamente.'}), 500
     finally:
         conn.close()
 
@@ -1109,29 +1246,52 @@ def assinar_plano():
 
     data_inicio = datetime.now().date()
     data_renovacao = data_inicio + timedelta(days=30)
-    data_renovacao_fmt = data_renovacao.strftime("%d/%m/%Y") # Formato legível para o alerta
+    data_renovacao_fmt = data_renovacao.strftime("%d/%m/%Y")
 
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT id FROM assinaturas WHERE cliente_id = %s AND status = 'Ativo'", (cliente_id,))
+            cursor.execute("SELECT id FROM assinaturas WHERE cliente_id = %s AND LOWER(status) = 'ativo'", (cliente_id,))
             if cursor.fetchone():
                 return jsonify({"sucesso": False, "mensagem": "Você já possui um plano ativo."}), 400
 
             cursor.execute(
-                "INSERT INTO assinaturas (cliente_id, nome_plano, preco, status, data_inicio, data_renovacao) VALUES (%s, %s, %s, 'Ativo', %s, %s)",
+                "INSERT INTO assinaturas (cliente_id, nome_plano, preco, status, data_inicio, data_renovacao) VALUES (%s, %s, %s, 'ativo', %s, %s)",
                 (cliente_id, nome_plano, preco, data_inicio, data_renovacao)
             )
             conn.commit()
 
-        # Retorna a data junto para o JavaScript exibir no alert sem dar undefined
         return jsonify({
             "sucesso": True, 
             "mensagem": "Assinatura realizada com sucesso!",
             "renovacao": data_renovacao_fmt
         })
+    except Exception as e:
+        conn.rollback()
+        app.logger.error("Erro em assinar_plano: %s", e)
+        return jsonify({"sucesso": False, "mensagem": "Erro interno. Tente novamente."}), 500
     finally:
         conn.close()
+
+
+@app.route("/cancelar-agendamento/<int:id>", methods=["POST"])
+def cancelar_agendamento(id):
+    if "cliente_id" not in session:
+        return redirect(url_for("login"))
+
+    cliente_id = session["cliente_id"]
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("DELETE FROM agendamentos WHERE id = %s AND cliente_id = %s", (id, cliente_id))
+            conn.commit()
+    except Exception as e:
+        conn.rollback()
+        app.logger.error("Erro em cancelar_agendamento: %s", e)
+    finally:
+        conn.close()
+
+    return redirect(url_for("meus_agendamentos"))
 
 
 @app.route("/")
@@ -1179,7 +1339,8 @@ def cadastro():
                 conn.commit()
             return redirect(url_for("login"))
         except Exception as e:
-            erro = f"Erro no cadastro: {str(e)}"
+            app.logger.error("Erro no cadastro: %s", e)
+            erro = "Erro no cadastro. Tente novamente."
         finally:
             conn.close()
 
@@ -1216,31 +1377,25 @@ def agendar():
         except (TypeError, ValueError):
             barbeiro_id = 1
 
-        # Revalida o status atual da assinatura diretamente no POST por segurança
         tem_assinatura_atual = cliente_tem_assinatura_ativa(cliente_id)
 
-        # Bloqueia se o tipo de pagamento escolhido for "plano" ou "vip" e ele não tiver assinatura ativa
         if tipo_pagamento in ["plano", "vip"] and not tem_assinatura_atual:
             erro = "Você não possui uma assinatura ativa para usar esta opção de pagamento."
         else:
             conn = get_db_connection()
             try:
                 with conn.cursor() as cursor:
-                    # Busca o nome do barbeiro
                     cursor.execute("SELECT nome FROM barbeiros WHERE id = %s", (barbeiro_id,))
                     barb = cursor.fetchone()
                     profissional_nome = barb['nome'] if barb else "Willian Bruno"
 
-                    # Busca o preço correto na tabela de serviços
                     cursor.execute("SELECT preco FROM servicos WHERE LOWER(TRIM(nome)) = LOWER(TRIM(%s))", (servico,))
                     serv_db = cursor.fetchone()
                     preco_servico = float(serv_db['preco']) if serv_db else 35.00
 
-                    # Se a modalidade for plano ou vip, o preço do agendamento pode ser zerado ou mantido conforme sua regra
                     if tipo_pagamento in ["plano", "vip"]:
                         preco_servico = 0.00
 
-                    # Verifica se o horário já está ocupado
                     cursor.execute(
                         "SELECT id FROM agendamentos WHERE barbeiro_id = %s AND data = %s AND horario = %s AND status != 'cancelado'",
                         (barbeiro_id, data, horario)
@@ -1276,7 +1431,9 @@ def meus_agendamentos():
         with conn.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT * FROM agendamentos 
+                SELECT id, cliente_id, barbeiro_id, profissional, data, horario, 
+                       servico, tipo_pagamento, status_pagamento, status, preco 
+                FROM agendamentos 
                 WHERE cliente_id = %s AND (data > %s OR (data = %s AND horario >= %s))
                 ORDER BY data ASC, horario ASC
                 """,
@@ -1311,10 +1468,8 @@ def horarios_disponiveis():
     finally:
         conn.close()
 
-    # Filtra os horários já ocupados
     livres = [h for h in todos_horarios if h not in agendados]
 
-    # SE A DATA SELECIONADA FOR HOJE, FILTRA OS HORÁRIOS QUE JÁ PASSARAM
     data_atual_str = datetime.now().strftime("%Y-%m-%d")
     if data == data_atual_str:
         hora_atual_str = datetime.now().strftime("%H:%M")
@@ -1323,21 +1478,6 @@ def horarios_disponiveis():
     return jsonify(livres)
 
 
-@app.route("/cancelar-agendamento/<int:id>", methods=["POST"])
-def cancelar_agendamento(id):
-    if "cliente_id" not in session:
-        return redirect(url_for("login"))
-
-    cliente_id = session["cliente_id"]
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute("DELETE FROM agendamentos WHERE id = %s AND cliente_id = %s", (id, cliente_id))
-            conn.commit()
-    finally:
-        conn.close()
-
-    return redirect(url_for("meus_agendamentos"))
 
 
 @app.route("/sair")
@@ -1346,5 +1486,23 @@ def sair():
     return redirect(url_for("home"))
 
 
+@app.errorhandler(500)
+def internal_error(error):
+    app.logger.error("Erro 500 Interno: %s", error)
+    return jsonify({
+        "sucesso": False,
+        "mensagem": "Erro interno no servidor. Tente novamente mais tarde."
+    }), 500
+
+@app.errorhandler(404)
+def not_found_error(error):
+    return jsonify({
+        "sucesso": False,
+        "mensagem": "Recurso ou rota não encontrada."
+    }), 404
+
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", debug=True, port=5000)
+    debug_mode = os.environ.get("FLASK_DEBUG", "False").lower() == "true"
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", debug=debug_mode, port=port)

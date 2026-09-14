@@ -1,37 +1,56 @@
 from datetime import datetime
+import os
 import pymysql
+from dotenv import load_dotenv
+
+load_dotenv()
+
+DB_HOST = os.environ.get("DB_HOST", "localhost")
+DB_USER = os.environ.get("DB_USER", "root")
+DB_PASSWORD = os.environ.get("DB_PASSWORD", "")
+DB_NAME = os.environ.get("DB_NAME", "barbearia")
 
 
 def get_db_connection():
-    """Cria e retorna a conexão com o banco de dados 'barbearia'."""
+    """Cria e retorna a conexão com o banco de dados configurado."""
     connection = pymysql.connect(
-        host='localhost',
-        user='root',
-        password='',  # Adicione sua senha do MySQL se houver
-        database='barbearia',
+        host=DB_HOST,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        database=DB_NAME,
         cursorclass=pymysql.cursors.DictCursor,
         autocommit=True,
     )
     return connection
 
 
+def coluna_existe(cursor, tabela, coluna):
+    """Verifica formalmente se uma coluna existe na tabela usando o Information Schema."""
+    cursor.execute("""
+        SELECT COUNT(*) AS qtd 
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = %s
+    """, (DB_NAME, tabela, coluna))
+    return cursor.fetchone()["qtd"] > 0
+
+
 def init_db():
     """Inicializa o banco de dados e cria todas as tabelas necessárias."""
     try:
         # 1. Conecta ao MySQL sem especificar o banco para criá-lo se não existir
-        conn = pymysql.connect(host='localhost', user='root', password='')
+        conn = pymysql.connect(host=DB_HOST, user=DB_USER, password=DB_PASSWORD)
         with conn.cursor() as cursor:
             cursor.execute(
-                'CREATE DATABASE IF NOT EXISTS barbearia CHARACTER SET utf8mb4'
+                f'CREATE DATABASE IF NOT EXISTS {DB_NAME} CHARACTER SET utf8mb4'
                 ' COLLATE utf8mb4_unicode_ci'
             )
         conn.close()
 
-        # 2. Conecta diretamente no banco 'barbearia' para criar as tabelas
+        # 2. Conecta diretamente no banco para criar as tabelas
         conn = get_db_connection()
         with conn.cursor() as cursor:
 
-            # TABELA 1: Usuários (Clientes do aplicativo/web)
+            # TABELA 1: Usuários
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS usuarios (
                     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -43,7 +62,7 @@ def init_db():
                 ) ENGINE=InnoDB;
             ''')
 
-            # TABELA 2: Barbeiros da Barbearia
+            # TABELA 2: Barbeiros
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS barbeiros (
                     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -56,14 +75,14 @@ def init_db():
                 ) ENGINE=InnoDB;
             ''')
 
-            # TABELA 3: Assinaturas / Planos Ativos (Gateway de Pagamento)
+            # TABELA 3: Assinaturas
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS assinaturas (
                     id INT AUTO_INCREMENT PRIMARY KEY,
                     cliente_id INT NOT NULL,
                     nome_plano VARCHAR(100) NOT NULL,
                     preco DECIMAL(10, 2) NOT NULL,
-                    status VARCHAR(50) DEFAULT 'pending',
+                    status VARCHAR(50) DEFAULT 'pendente',
                     data_inicio DATE NOT NULL,
                     data_renovacao DATE NOT NULL,
                     gateway_subscription_id VARCHAR(100) UNIQUE,
@@ -72,7 +91,7 @@ def init_db():
                 ) ENGINE=InnoDB;
             ''')
 
-            # --- LIMPEZA PRÉVIA DE DUPLICATAS CASO EXISTAM ---
+            # Limpeza prévia de duplicatas em agendamentos
             try:
                 cursor.execute('''
                     DELETE a1 FROM agendamentos a1
@@ -85,7 +104,7 @@ def init_db():
             except Exception:
                 pass
 
-            # TABELA 4: Agendamentos (Com Unique Key para bloquear duplicações)
+            # TABELA 4: Agendamentos
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS agendamentos (
                     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -105,7 +124,7 @@ def init_db():
                 ) ENGINE=InnoDB;
             ''')
 
-            # TABELA 5: Produtos (vendidos na barbearia, gerenciados pelo app e exibidos no site)
+            # TABELA 5: Produtos
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS produtos (
                     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -118,7 +137,7 @@ def init_db():
                 ) ENGINE=InnoDB;
             ''')
 
-            # TABELA 6: Combos/Pacotes (de serviços ou de produtos, com desconto)
+            # TABELA 6: Combos
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS combos (
                     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -133,7 +152,7 @@ def init_db():
                 ) ENGINE=InnoDB;
             ''')
 
-            # TABELA 7: Preço de cada tipo de serviço
+            # TABELA 7: Serviços
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS servicos (
                     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -143,33 +162,24 @@ def init_db():
                 ) ENGINE=InnoDB;
             ''')
 
-            # SEGURANÇA: Garante colunas essenciais caso a tabela seja antiga
-            colunas_para_verificar = [
-                "ALTER TABLE agendamentos ADD COLUMN barbeiro_id INT NOT NULL DEFAULT 1;",
-                "ALTER TABLE agendamentos ADD COLUMN profissional VARCHAR(100);",
-                "ALTER TABLE agendamentos ADD COLUMN status VARCHAR(20) DEFAULT 'confirmado';",
-                "ALTER TABLE agendamentos ADD COLUMN tipo_pagamento VARCHAR(50) DEFAULT 'presencial';",
-                "ALTER TABLE agendamentos ADD COLUMN status_pagamento VARCHAR(50) DEFAULT 'pendente';",
-                "ALTER TABLE agendamentos ADD COLUMN cliente_telefone VARCHAR(30);",  # <-- Adicionado aqui
-                "ALTER TABLE usuarios ADD COLUMN telefone VARCHAR(20);"
+            # Migrações formais e seguras por Schema Check
+            migracoes = [
+                ("agendamentos", "barbeiro_id", "ALTER TABLE agendamentos ADD COLUMN barbeiro_id INT NOT NULL DEFAULT 1;"),
+                ("agendamentos", "profissional", "ALTER TABLE agendamentos ADD COLUMN profissional VARCHAR(100);"),
+                ("agendamentos", "status", "ALTER TABLE agendamentos ADD COLUMN status VARCHAR(20) DEFAULT 'confirmado';"),
+                ("agendamentos", "tipo_pagamento", "ALTER TABLE agendamentos ADD COLUMN tipo_pagamento VARCHAR(50) DEFAULT 'presencial';"),
+                ("agendamentos", "status_pagamento", "ALTER TABLE agendamentos ADD COLUMN status_pagamento VARCHAR(50) DEFAULT 'pendente';"),
+                ("agendamentos", "cliente_telefone", "ALTER TABLE agendamentos ADD COLUMN cliente_telefone VARCHAR(30);"),
+                ("agendamentos", "preco", "ALTER TABLE agendamentos ADD COLUMN preco DECIMAL(10, 2) DEFAULT 0;"),
+                ("usuarios", "telefone", "ALTER TABLE usuarios ADD COLUMN telefone VARCHAR(20);"),
             ]
-            colunas_para_verificar = [
-                "ALTER TABLE agendamentos ADD COLUMN barbeiro_id INT NOT NULL DEFAULT 1;",
-                "ALTER TABLE agendamentos ADD COLUMN profissional VARCHAR(100);",
-                "ALTER TABLE agendamentos ADD COLUMN status VARCHAR(20) DEFAULT 'confirmado';",
-                "ALTER TABLE agendamentos ADD COLUMN tipo_pagamento VARCHAR(50) DEFAULT 'presencial';",
-                "ALTER TABLE agendamentos ADD COLUMN status_pagamento VARCHAR(50) DEFAULT 'pendente';",
-                "ALTER TABLE agendamentos ADD COLUMN cliente_telefone VARCHAR(30);",
-                "ALTER TABLE agendamentos ADD COLUMN preco DECIMAL(10, 2) DEFAULT 0;",
-                "ALTER TABLE usuarios ADD COLUMN telefone VARCHAR(20);"
-            ]
-            for comando_sql in colunas_para_verificar:
-                try:
-                    cursor.execute(comando_sql)
-                except Exception:
-                    pass  # Ignora caso a coluna já exista
 
-            # --- POPULAR DADOS INICIAIS ---
+            for tabela, coluna, comando_sql in migracoes:
+                if not coluna_existe(cursor, tabela, coluna):
+                    cursor.execute(comando_sql)
+                    print(f"🔧 Migração aplicada: coluna '{coluna}' adicionada na tabela '{tabela}'.")
+
+            # Popular dados iniciais
             barbeiros_padrao = [
                 ('Willian Bruno', 'Barbeiro Master', 'Cortes Clássicos e Barba', '(83) 98642-9833'),
                 ('Luan', 'Barbeiro', 'Cortes em Geral', ''),
@@ -178,10 +188,7 @@ def init_db():
                 cursor.execute("SELECT id FROM barbeiros WHERE nome = %s", (nome,))
                 if not cursor.fetchone():
                     cursor.execute(
-                        '''
-                            INSERT INTO barbeiros (nome, cargo, especialidade, telefone)
-                            VALUES (%s, %s, %s, %s)
-                        ''',
+                        'INSERT INTO barbeiros (nome, cargo, especialidade, telefone) VALUES (%s, %s, %s, %s)',
                         (nome, cargo, especialidade, telefone),
                     )
                     print(f"💈 Barbeiro '{nome}' cadastrado com sucesso!")
