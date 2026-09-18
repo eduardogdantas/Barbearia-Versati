@@ -158,6 +158,8 @@ def init_db():
                     id INT AUTO_INCREMENT PRIMARY KEY,
                     nome VARCHAR(150) NOT NULL UNIQUE,
                     preco DECIMAL(10, 2) NOT NULL DEFAULT 0,
+                    categoria VARCHAR(80) NOT NULL DEFAULT 'Geral',
+                    foto VARCHAR(255) DEFAULT '',
                     criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 ) ENGINE=InnoDB;
             ''')
@@ -172,6 +174,8 @@ def init_db():
                 ("agendamentos", "cliente_telefone", "ALTER TABLE agendamentos ADD COLUMN cliente_telefone VARCHAR(30);"),
                 ("agendamentos", "preco", "ALTER TABLE agendamentos ADD COLUMN preco DECIMAL(10, 2) DEFAULT 0;"),
                 ("usuarios", "telefone", "ALTER TABLE usuarios ADD COLUMN telefone VARCHAR(20);"),
+                ("servicos", "categoria", "ALTER TABLE servicos ADD COLUMN categoria VARCHAR(80) NOT NULL DEFAULT 'Geral';"),
+                ("servicos", "foto", "ALTER TABLE servicos ADD COLUMN foto VARCHAR(255) DEFAULT '';"),
             ]
 
             for tabela, coluna, comando_sql in migracoes:

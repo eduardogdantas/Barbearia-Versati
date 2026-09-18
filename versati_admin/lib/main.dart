@@ -9,9 +9,9 @@ import 'dart:typed_data';
 // CONFIGURAÇÃO CENTRAL DA API E SEGURANÇA
 // ==============================================================================
 class AppConfig {
-  static const String baseUrl = 'http://192.168.0.13:5000';
+  static const String baseUrl = 'http://192.168.0.22:5000';
   static const String apiUrl = '$baseUrl/api';
-  static const String adminToken = 'SEU_TOKEN_SECRETO_AQUI'; 
+  static const String adminToken = 'token_secreto_para_proteger_o_flutter'; 
 
   // Helper centralizado para injetar o token de segurança nas requisições admin
   static Map<String, String> get adminHeaders => {
@@ -564,7 +564,8 @@ class _HistoricoAtendimentosScreenState extends State<HistoricoAtendimentosScree
   bool _isLoading = true;
   DateTime _dataSelecionada = DateTime.now();
 
-  final String _baseUrl = AppConfig.apiUrl;
+  // Utilizando a configuração central da API
+  final String _apiUrl = '${AppConfig.apiUrl}/admin/dados';
 
   @override
   void initState() {
@@ -576,13 +577,12 @@ class _HistoricoAtendimentosScreenState extends State<HistoricoAtendimentosScree
     if (!mounted) return;
     setState(() => _isLoading = true);
 
-    final dataFormatada = "${_dataSelecionada.year}-${_dataSelecionada.month.toString().padLeft(2, '0')}-${_dataSelecionada.day.toString().padLeft(2, '0')}";
-
     try {
       final response = await http.get(
-        Uri.parse('$_baseUrl/admin/dados?data=$dataFormatada'),
-        headers: AppConfig.adminHeaders,
+        Uri.parse(_apiUrl),
+        headers: AppConfig.adminHeaders, // Corrigido para usar os headers padronizados com o token correto
       );
+      
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (mounted) {
@@ -600,6 +600,7 @@ class _HistoricoAtendimentosScreenState extends State<HistoricoAtendimentosScree
     }
   }
 
+  // Restante dos métodos da classe continuam iguais...
   Future<void> _selecionarData(BuildContext context) async {
     final DateTime? picked = await showDatePicker(
       context: context,
@@ -1410,10 +1411,6 @@ class DadosBarbeariaScreen extends StatelessWidget {
   }
 }
 
-// ==============================================================================
-// TELA DE GERENCIAR USUÁRIOS
-// ==============================================================================
-
 class GerenciarUsuariosScreen extends StatefulWidget {
   const GerenciarUsuariosScreen({super.key});
 
@@ -1462,6 +1459,79 @@ class _GerenciarUsuariosScreenState extends State<GerenciarUsuariosScreen> {
       _mostrarSnack('Erro de conexão com o servidor.');
       setState(() => _isLoading = false);
     }
+  }
+
+  // NOVA FUNÇÃO: Requisitar a visualização da senha ao backend Flask
+  Future<void> _verSenhaAPI(int usuarioId, String nomeUsuario) async {
+    try {
+      final response = await http.get(
+        Uri.parse('${AppConfig.apiUrl}/admin/usuario/$usuarioId/senha'),
+        headers: AppConfig.adminHeaders,
+      );
+
+      final resData = jsonDecode(response.body);
+      if (!mounted) return;
+
+      if (response.statusCode == 200 && resData['sucesso'] == true) {
+        final String senhaVisivel = resData['senha'] ?? 'Não disponível';
+        _exibirDialogoSenhaVisualizada(nomeUsuario, senhaVisivel);
+      } else {
+        _mostrarSnack('❌ ${resData['mensagem'] ?? 'Erro ao obter senha.'}');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _mostrarSnack('Erro de conexão ao buscar senha.');
+    }
+  }
+
+  void _exibirDialogoSenhaVisualizada(String nomeUsuario, String senha) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: _cardDark,
+        title: const Text(
+          'SENHA DO USUÁRIO',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Senha cadastrada para $nomeUsuario:',
+              style: TextStyle(color: _textSecondary, fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.black,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: _brandRed.withOpacity(0.4)),
+              ),
+              child: SelectableText(
+                senha,
+                style: const TextStyle(
+                  color: Colors.greenAccent,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.2,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: _brandRed),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Fechar', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _resetarSenhaAPI(int usuarioId, String novaSenha) async {
@@ -1712,27 +1782,39 @@ class _GerenciarUsuariosScreenState extends State<GerenciarUsuariosScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
+          // Botões de Ação para Senha (Ver e Alterar)
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Icon(Icons.lock_outline, size: 16, color: _brandRed),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Gerenciar Senha do Usuário',
-                    style: TextStyle(color: _textSecondary, fontSize: 13),
-                  ),
-                ],
-              ),
+              // Botão de Ver Senha
               InkWell(
-                onTap: () => _exibirDialogoResetarSenha(
-                  id,
-                  u['nome'] ?? 'Cliente',
-                ),
+                onTap: () => _verSenhaAPI(id, u['nome'] ?? 'Cliente'),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.blueAccent, width: 0.8),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.visibility_outlined, color: Colors.blueAccent, size: 14),
+                      SizedBox(width: 4),
+                      Text(
+                        'VER SENHA',
+                        style: TextStyle(color: Colors.blueAccent, fontSize: 10, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              // Botão de Alterar Senha
+              InkWell(
+                onTap: () => _exibirDialogoResetarSenha(id, u['nome'] ?? 'Cliente'),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
                     color: Colors.orange.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(6),
@@ -2877,6 +2959,31 @@ class _GerenciarServicosScreenState extends State<GerenciarServicosScreen> {
     }
   }
 
+  Future<void> _atualizarServicoAPI(int id, String nome, double preco, String categoria, String foto) async {
+    try {
+      final response = await http.put(
+        Uri.parse('$_apiUrl/$id'),
+        headers: AppConfig.adminHeaders,
+        body: jsonEncode({
+          'nome': nome,
+          'preco': preco,
+          'categoria': categoria,
+          'foto': foto,
+        }),
+      );
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        _mostrarSnack('✅ Serviço atualizado com sucesso!');
+        _carregarServicos();
+      } else {
+        _mostrarSnack('Erro ao atualizar serviço.');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _mostrarSnack('Erro de conexão com o servidor.');
+    }
+  }
+
   void _mostrarSnack(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
@@ -3042,6 +3149,180 @@ class _GerenciarServicosScreenState extends State<GerenciarServicosScreen> {
     );
   }
 
+  // NOVA FUNÇÃO: Diálogo para Editar Serviço Existente
+  void _abrirDialogoEditarServico(Map<String, dynamic> servico) {
+    final int id = servico['id'];
+    final nomeCtrl = TextEditingController(text: servico['nome'] ?? '');
+    final precoCtrl = TextEditingController(text: servico['preco']?.toString() ?? '');
+    
+    // Valida se a categoria existe na lista permitida, caso contrário define 'Cabelo' como padrão
+    String categoriaAtual = servico['categoria'] ?? 'Cabelo';
+    const categoriasValidas = ['Cabelo', 'Barba', 'Tratamentos', 'Química'];
+    if (!categoriasValidas.contains(categoriaAtual)) {
+      categoriaAtual = 'Cabelo';
+    }
+    String categoriaSelecionada = categoriaAtual;
+
+    String fotoBase64 = servico['foto'] ?? '';
+    Uint8List? imagemBytesWeb;
+
+    // Se já houver imagem em base64 salva, decodifica para exibição prévia
+    if (fotoBase64.startsWith('data:image')) {
+      try {
+        imagemBytesWeb = base64Decode(fotoBase64.split(',')[1]);
+      } catch (_) {}
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          Future<void> selecionarImagem(ImageSource source) async {
+            final picker = ImagePicker();
+            final pickedFile = await picker.pickImage(source: source, imageQuality: 70);
+            if (pickedFile != null) {
+              final bytes = await pickedFile.readAsBytes();
+              setDialogState(() {
+                imagemBytesWeb = bytes;
+                fotoBase64 = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+              });
+            }
+          }
+
+          return AlertDialog(
+            backgroundColor: _cardDark,
+            title: const Text('EDITAR SERVIÇO', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  GestureDetector(
+                    onTap: () {
+                      showModalBottomSheet(
+                        context: context,
+                        backgroundColor: _cardDark,
+                        builder: (_) => SafeArea(
+                          child: Wrap(
+                            children: [
+                              ListTile(
+                                leading: const Icon(Icons.camera_alt, color: Colors.white),
+                                title: const Text('Tirar Foto com a Câmera', style: TextStyle(color: Colors.white)),
+                                onTap: () {
+                                  Navigator.pop(context);
+                                  selecionarImagem(ImageSource.camera);
+                                },
+                              ),
+                              ListTile(
+                                leading: const Icon(Icons.photo_library, color: Colors.white),
+                                title: const Text('Escolher da Galeria', style: TextStyle(color: Colors.white)),
+                                onTap: () {
+                                  Navigator.pop(context);
+                                  selecionarImagem(ImageSource.gallery);
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1C1C1C),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white24),
+                      ),
+                      child: imagemBytesWeb != null
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: Image.memory(imagemBytesWeb!, fit: BoxFit.cover),
+                            )
+                          : (fotoBase64.isNotEmpty && !fotoBase64.startsWith('data:image'))
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: Image.network(fotoBase64, fit: BoxFit.cover, errorBuilder: (_,__,___) => Icon(Icons.image, color: _brandRed)),
+                                )
+                              : Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.add_a_photo, color: _brandRed, size: 28),
+                                    const SizedBox(height: 4),
+                                    const Text('Foto', style: TextStyle(color: Colors.white54, fontSize: 10)),
+                                  ],
+                                ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  TextField(
+                    controller: nomeCtrl,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(labelText: 'Nome do Serviço', labelStyle: TextStyle(color: Colors.grey)),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: categoriaSelecionada,
+                    dropdownColor: _cardDark,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(
+                      labelText: 'Categoria',
+                      labelStyle: TextStyle(color: Colors.grey),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'Cabelo', child: Text('Cabelo')),
+                      DropdownMenuItem(value: 'Barba', child: Text('Barba')),
+                      DropdownMenuItem(value: 'Tratamentos', child: Text('Tratamentos')),
+                      DropdownMenuItem(value: 'Química', child: Text('Química')),
+                    ],
+                    onChanged: (v) {
+                      setDialogState(() {
+                        categoriaSelecionada = v ?? 'Cabelo';
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: precoCtrl,
+                    keyboardType: TextInputType.number,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(labelText: 'Preço (Ex: 35.00)', labelStyle: TextStyle(color: Colors.grey)),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: _brandRed),
+                onPressed: () {
+                  final preco = double.tryParse(precoCtrl.text.trim().replaceAll(',', '.'));
+                  if (nomeCtrl.text.trim().isNotEmpty && preco != null) {
+                    Navigator.pop(ctx);
+                    _atualizarServicoAPI(
+                      id,
+                      nomeCtrl.text.trim(), 
+                      preco, 
+                      categoriaSelecionada, 
+                      fotoBase64
+                    );
+                  } else {
+                    _mostrarSnack('Preencha nome e um preço válido.');
+                  }
+                },
+                child: const Text('Atualizar', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -3147,8 +3428,16 @@ class _GerenciarServicosScreenState extends State<GerenciarServicosScreen> {
                               'R\$ ${preco.toStringAsFixed(2).replaceAll('.', ',')}',
                               style: TextStyle(color: _brandRed, fontWeight: FontWeight.bold, fontSize: 14),
                             ),
+                            const SizedBox(width: 4),
+                            // Botão de Editar adicionado aqui
+                            IconButton(
+                              icon: const Icon(Icons.edit_outlined, color: Colors.white70, size: 20),
+                              tooltip: 'Editar Serviço',
+                              onPressed: () => _abrirDialogoEditarServico(s),
+                            ),
                             IconButton(
                               icon: const Icon(Icons.delete_outline, color: Colors.white38, size: 20),
+                              tooltip: 'Remover Serviço',
                               onPressed: () => _removerServicoAPI(s['id']),
                             ),
                           ],

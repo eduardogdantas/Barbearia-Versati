@@ -31,6 +31,10 @@ ADMIN_API_TOKEN = os.environ.get("ADMIN_API_TOKEN")
 def admin_required(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
+        # Permite que os pedidos de pré-voo do CORS passem sem exigir o token
+        if request.method == "OPTIONS":
+            return "", 200
+            
         auth_header = request.headers.get("Authorization", "")
         token = auth_header.replace("Bearer ", "").strip()
         
@@ -55,19 +59,42 @@ app.json_provider_class = CustomJSONProvider
 app.secret_key = os.environ.get(
     "FLASK_SECRET_KEY", "barbearia_versati_secret_key_prod"
 )
-CORS(
-    app, 
-    resources={
-        r"/api/*": {
-            "origins": [
-                "https://seusite.com.br", 
-                "http://localhost:5000"
-            ]
-        }
-    }, 
-    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"], 
-    allow_headers=["Content-Type", "Authorization"]
-)
+CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True, allow_headers=["Content-Type", "Authorization", "X-Requested-With"], methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+
+@app.route('/api/admin/servicos/<int:servico_id>', methods=['PUT', 'DELETE'])
+@admin_required
+def editar_ou_remover_servico(servico_id):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            if request.method == 'DELETE':
+                cursor.execute("DELETE FROM servicos WHERE id = %s", (servico_id,))
+                conn.commit()
+                return jsonify({'sucesso': True, 'mensagem': 'Serviço removido!'}), 200
+
+            data = request.get_json() or {}
+            nome = (data.get('nome') or '').strip()
+            preco = data.get('preco', 0)
+            categoria = (data.get('categoria') or 'Geral').strip()
+            foto = (data.get('foto') or '').strip()
+
+            if not nome:
+                return jsonify({'sucesso': False, 'mensagem': 'Nome obrigatório'}), 400
+
+            cursor.execute(
+                """UPDATE servicos 
+                   SET nome = %s, preco = %s, categoria = %s, foto = %s 
+                   WHERE id = %s""",
+                (nome, preco, categoria, foto, servico_id)
+            )
+            conn.commit()
+            return jsonify({'sucesso': True, 'mensagem': 'Serviço atualizado com sucesso!'}), 200
+    except Exception as e:
+        conn.rollback()
+        app.logger.error("Erro em editar_ou_remover_servico: %s", e)
+        return jsonify({'sucesso': False, 'mensagem': 'Erro interno. Tente novamente.'}), 500
+    finally:
+        conn.close()
 
 @app.route("/api/pagamento/cartao", methods=["POST"])
 def processar_pagamento_cartao():
@@ -736,23 +763,6 @@ def gerenciar_servicos():
     finally:
         conn.close()
 
-@app.route('/api/admin/servicos/<int:servico_id>', methods=['DELETE'])
-@admin_required
-def remover_servico(servico_id):
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute("DELETE FROM servicos WHERE id = %s", (servico_id,))
-            conn.commit()
-            return jsonify({'sucesso': True, 'mensagem': 'Preço removido!'}), 200
-    except Exception as e:
-        conn.rollback()
-        app.logger.error("Erro em remover_servico: %s", e)
-        return jsonify({'sucesso': False, 'mensagem': 'Erro interno. Tente novamente.'}), 500
-    finally:
-        conn.close()
-
-
 @app.route("/api/pagamento/pix", methods=["POST"])
 def processar_pagamento_pix():
     dados = request.get_json() or {}
@@ -904,7 +914,8 @@ def api_login():
     finally:
         conn.close()
 
-    if usuario and check_password_hash(usuario["senha"], senha):
+    # Compara a senha digitada diretamente com a senha salva no banco
+    if usuario and usuario["senha"] == senha:
         return jsonify({
             "sucesso": True,
             "mensagem": "Login realizado com sucesso!",
@@ -919,19 +930,18 @@ def api_cadastro():
     dados = request.get_json() or {}
     nome = dados.get("nome")
     email = dados.get("email")
-    senha = dados.get("senha")
+    senha = dados.get("senha") # Senha em texto plano
 
     if not nome or not email or not senha:
         return jsonify({"sucesso": False, "mensagem": "Preencha todos os campos!"}), 400
 
-    senha_hash = generate_password_hash(senha)
-
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
+            # Salva a senha diretamente sem criptografia
             cursor.execute(
                 "INSERT INTO usuarios (nome, email, senha) VALUES (%s, %s, %s)",
-                (nome, email, senha_hash)
+                (nome, email, senha)
             )
             conn.commit()
         return jsonify({"sucesso": True, "mensagem": "Cadastro realizado!"}), 201
@@ -939,7 +949,24 @@ def api_cadastro():
         return jsonify({"sucesso": False, "mensagem": "E-mail já cadastrado!"}), 400
     finally:
         conn.close()
-
+@app.route('/api/admin/usuario/<int:usuario_id>/senha', methods=['GET'])
+def ver_senha_usuario(usuario_id):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id, nome, senha FROM usuarios WHERE id = %s", (usuario_id,))
+            usuario = cursor.fetchone()
+            
+            if not usuario:
+                return jsonify({'sucesso': False, 'mensagem': 'Usuário não encontrado'}), 404
+            
+            # Retorna a senha legível em texto plano
+            return jsonify({'sucesso': True, 'senha': usuario['senha']})
+    except Exception as e:
+        app.logger.error("Erro em ver_senha_usuario: %s", e)
+        return jsonify({'sucesso': False, 'mensagem': 'Erro interno. Tente novamente.'}), 500
+    finally:
+        conn.close()
 @app.route("/api/admin/usuarios", methods=["GET", "OPTIONS"])
 @admin_required
 def api_admin_usuarios():

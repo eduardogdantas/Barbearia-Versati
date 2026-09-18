@@ -476,6 +476,148 @@
             font-size: 0.9rem;
             color: var(--text);
         }
+
+        /* ==========================================================
+           BOTÃO HAMBÚRGUER
+           Fica escondido no desktop e só aparece no celular.
+           ========================================================== */
+        .btn-hamburguer {
+            display: none;
+            background: transparent;
+            border: 1px solid var(--stroke);
+            border-radius: 6px;
+            color: var(--text);
+            font-size: 1.4rem;
+            line-height: 1;
+            padding: 6px 12px;
+            cursor: pointer;
+        }
+
+        /* ==========================================================
+           RESPONSIVO — TABLET (até 900px)
+           ========================================================== */
+        @media (max-width: 900px) {
+            header { padding: 15px 20px; }
+            .nav-links { gap: 14px; }
+            .hero h1 { font-size: 2.2rem; }
+            .produtos-section h2, .sobre-section h2 { font-size: 2.2rem; }
+        }
+
+        /* ==========================================================
+           RESPONSIVO — CELULAR (até 768px)
+           Aqui o layout muda de verdade: menu vira hambúrguer,
+           botões empilham e as grades viram uma coluna só.
+           ========================================================== */
+        @media (max-width: 768px) {
+
+            /* --- Evita rolagem lateral --- */
+            html, body { overflow-x: hidden; width: 100%; }
+            img { max-width: 100%; height: auto; }
+
+            /* --- Cabeçalho: logo à esquerda, hambúrguer à direita --- */
+            header {
+                grid-template-columns: auto 1fr;
+                padding: 12px 16px;
+                gap: 10px;
+            }
+            .logo-nav { grid-column: 1; }
+            .btn-hamburguer {
+                display: block;
+                grid-column: 2;
+                justify-self: end;
+            }
+
+            /* Menu escondido por padrão; vira lista vertical quando aberto */
+            .nav-links {
+                grid-column: 1 / -1;
+                grid-row: 2;
+                display: none;
+                flex-direction: column;
+                align-items: stretch;
+                gap: 0;
+                width: 100%;
+                padding-top: 10px;
+            }
+            .nav-links.aberto { display: flex; }
+            .nav-links a {
+                padding: 14px 4px;
+                border-bottom: 1px solid var(--stroke);
+                font-size: 1rem;
+            }
+
+            /* Área do usuário (Entrar / Olá, fulano / Sair) */
+            .user-nav-area {
+                grid-column: 1 / -1;
+                grid-row: 3;
+                display: none;
+                flex-direction: column;
+                align-items: stretch;
+                gap: 8px;
+                width: 100%;
+                padding-top: 10px;
+            }
+            .user-nav-area.aberto { display: flex; }
+            .btn-nav-outline, .btn-user-badge {
+                width: 100%;
+                padding: 12px 16px;
+                font-size: 0.95rem;
+            }
+
+            /* --- Hero --- */
+            .hero { padding: 45px 18px 32px 18px; }
+            .hero-logo { height: 80px; width: 80px; }
+            .hero h1 {
+                font-size: 1.9rem;
+                line-height: 1.15;
+                overflow-wrap: break-word;
+            }
+            .hero p { font-size: 1rem; margin-bottom: 24px; }
+
+            /* Botões do hero empilhados, largura total */
+            .hero-buttons {
+                flex-direction: column;
+                width: 100%;
+                gap: 10px;
+            }
+            .btn-hero-red, .btn-hero-outline {
+                width: 100%;
+                padding: 15px 20px;
+                font-size: 1rem;
+            }
+
+            /* --- Seções --- */
+            .produtos-section { padding: 55px 18px; }
+            .produtos-section h2, .sobre-section h2 { font-size: 1.8rem; }
+            .produtos-section > p { font-size: 1rem; margin-bottom: 30px; }
+            .section-tag { font-size: 0.85rem; }
+
+            /* Cards de produto em coluna única */
+            .produtos-grid {
+                grid-template-columns: 1fr;
+                gap: 16px;
+            }
+            .produto-card { padding: 22px 18px; }
+
+            /* --- Sobre --- */
+            .sobre-section { padding: 55px 18px; }
+            .sobre-container { text-align: left; }
+            .tag, .pag-badge { font-size: 0.85rem; padding: 7px 12px; }
+
+            /* --- Modal ocupa quase a tela toda --- */
+            .modal-overlay > * {
+                max-width: 100%;
+                width: 100%;
+            }
+        }
+
+        /* ==========================================================
+           RESPONSIVO — CELULAR PEQUENO (até 380px)
+           ========================================================== */
+        @media (max-width: 380px) {
+            .hero h1 { font-size: 1.6rem; }
+            .produtos-section h2, .sobre-section h2 { font-size: 1.55rem; }
+            .btn-hero-red, .btn-hero-outline { font-size: 0.95rem; padding: 14px 16px; }
+        }
     </style>
 </head>
 <body>
@@ -485,7 +627,9 @@
         <div class="logo-nav">
             <img src="{{ url_for('static', filename='img/logo_versati.jpeg') }}" alt="Barbearia Versati">
         </div>
-        <nav class="nav-links">
+        <!-- Só aparece no celular (controlado pelo CSS em @media) -->
+        <button class="btn-hamburguer" id="btnMenu" aria-label="Abrir menu" aria-expanded="false">&#9776;</button>
+        <nav class="nav-links" id="navLinks">
             <a href="#produtos">Produtos</a>
             <a href="#sobre">Sobre</a>
             <a href="#contato">Contato</a>
@@ -493,7 +637,7 @@
                 <a href="/meus-agendamentos" style="color: var(--brass); font-weight: 600;">Meus Agendamentos</a>
             {% endif %}
         </nav>
-        <div class="user-nav-area">
+        <div class="user-nav-area" id="userNavArea">
             {% if cliente_id %}
                 <span class="btn-user-badge">Olá, {{ cliente_nome }}</span>
                 <a href="/sair" class="btn-nav-outline" style="color: #d81f2c !important; border-color: #d81f2c !important; text-decoration: none;">Sair</a>
@@ -761,9 +905,49 @@
             }
         }
 
+        // ======================================================
+        // MENU HAMBÚRGUER (celular)
+        // Abre e fecha a navegação quando a tela é pequena.
+        // ======================================================
+        function configurarMenuMobile() {
+            const btnMenu = document.getElementById('btnMenu');
+            const navLinks = document.getElementById('navLinks');
+            const userNavArea = document.getElementById('userNavArea');
+            if (!btnMenu || !navLinks) return;
+
+            btnMenu.addEventListener('click', () => {
+                const vaiAbrir = !navLinks.classList.contains('aberto');
+                navLinks.classList.toggle('aberto', vaiAbrir);
+                if (userNavArea) userNavArea.classList.toggle('aberto', vaiAbrir);
+                btnMenu.setAttribute('aria-expanded', vaiAbrir ? 'true' : 'false');
+                btnMenu.innerHTML = vaiAbrir ? '&times;' : '&#9776;';
+            });
+
+            // Fecha o menu ao clicar em qualquer link
+            navLinks.querySelectorAll('a').forEach(link => {
+                link.addEventListener('click', () => {
+                    navLinks.classList.remove('aberto');
+                    if (userNavArea) userNavArea.classList.remove('aberto');
+                    btnMenu.setAttribute('aria-expanded', 'false');
+                    btnMenu.innerHTML = '&#9776;';
+                });
+            });
+
+            // Se girar o celular ou voltar pro desktop, limpa o estado
+            window.addEventListener('resize', () => {
+                if (window.innerWidth > 768) {
+                    navLinks.classList.remove('aberto');
+                    if (userNavArea) userNavArea.classList.remove('aberto');
+                    btnMenu.setAttribute('aria-expanded', 'false');
+                    btnMenu.innerHTML = '&#9776;';
+                }
+            });
+        }
+
         // Executa a função assim que a página é aberta
         document.addEventListener("DOMContentLoaded", () => {
             carregarProdutosWeb();
+            configurarMenuMobile();
         });
     </script>
 </body>
