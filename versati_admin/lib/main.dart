@@ -9,7 +9,7 @@ import 'dart:typed_data';
 // CONFIGURAÇÃO CENTRAL DA API E SEGURANÇA
 // ==============================================================================
 class AppConfig {
-  static const String baseUrl = 'http://192.168.0.22:5000';
+  static const String baseUrl = 'http://localhost:5000';
   static const String apiUrl = '$baseUrl/api';
   static const String adminToken = 'token_secreto_para_proteger_o_flutter'; 
 
@@ -417,6 +417,13 @@ class _MainMultiTaskScreenState extends State<MainMultiTaskScreen> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(builder: (context) => const GerenciarAssinaturasScreen()),
+                        );
+                      }),
+                      _buildItemMenu(ctx, Icons.workspace_premium_outlined, "Planos", () {
+                        Navigator.pop(ctx);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const GerenciarPlanosScreen()),
                         );
                       }),
                     ],
@@ -1411,6 +1418,10 @@ class DadosBarbeariaScreen extends StatelessWidget {
   }
 }
 
+// ==============================================================================
+// TELA DE GERENCIAR USUÁRIOS
+// ==============================================================================
+
 class GerenciarUsuariosScreen extends StatefulWidget {
   const GerenciarUsuariosScreen({super.key});
 
@@ -1459,79 +1470,6 @@ class _GerenciarUsuariosScreenState extends State<GerenciarUsuariosScreen> {
       _mostrarSnack('Erro de conexão com o servidor.');
       setState(() => _isLoading = false);
     }
-  }
-
-  // NOVA FUNÇÃO: Requisitar a visualização da senha ao backend Flask
-  Future<void> _verSenhaAPI(int usuarioId, String nomeUsuario) async {
-    try {
-      final response = await http.get(
-        Uri.parse('${AppConfig.apiUrl}/admin/usuario/$usuarioId/senha'),
-        headers: AppConfig.adminHeaders,
-      );
-
-      final resData = jsonDecode(response.body);
-      if (!mounted) return;
-
-      if (response.statusCode == 200 && resData['sucesso'] == true) {
-        final String senhaVisivel = resData['senha'] ?? 'Não disponível';
-        _exibirDialogoSenhaVisualizada(nomeUsuario, senhaVisivel);
-      } else {
-        _mostrarSnack('❌ ${resData['mensagem'] ?? 'Erro ao obter senha.'}');
-      }
-    } catch (e) {
-      if (!mounted) return;
-      _mostrarSnack('Erro de conexão ao buscar senha.');
-    }
-  }
-
-  void _exibirDialogoSenhaVisualizada(String nomeUsuario, String senha) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: _cardDark,
-        title: const Text(
-          'SENHA DO USUÁRIO',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Senha cadastrada para $nomeUsuario:',
-              style: TextStyle(color: _textSecondary, fontSize: 13),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.black,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: _brandRed.withOpacity(0.4)),
-              ),
-              child: SelectableText(
-                senha,
-                style: const TextStyle(
-                  color: Colors.greenAccent,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.2,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: _brandRed),
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Fechar', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
   }
 
   Future<void> _resetarSenhaAPI(int usuarioId, String novaSenha) async {
@@ -1782,39 +1720,27 @@ class _GerenciarUsuariosScreenState extends State<GerenciarUsuariosScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          // Botões de Ação para Senha (Ver e Alterar)
+          const SizedBox(height: 8),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Botão de Ver Senha
-              InkWell(
-                onTap: () => _verSenhaAPI(id, u['nome'] ?? 'Cliente'),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: Colors.blueAccent, width: 0.8),
+              Row(
+                children: [
+                  Icon(Icons.lock_outline, size: 16, color: _brandRed),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Gerenciar Senha do Usuário',
+                    style: TextStyle(color: _textSecondary, fontSize: 13),
                   ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.visibility_outlined, color: Colors.blueAccent, size: 14),
-                      SizedBox(width: 4),
-                      Text(
-                        'VER SENHA',
-                        style: TextStyle(color: Colors.blueAccent, fontSize: 10, fontWeight: FontWeight.bold),
-                      ),
-                    ],
-                  ),
-                ),
+                ],
               ),
-              // Botão de Alterar Senha
               InkWell(
-                onTap: () => _exibirDialogoResetarSenha(id, u['nome'] ?? 'Cliente'),
+                onTap: () => _exibirDialogoResetarSenha(
+                  id,
+                  u['nome'] ?? 'Cliente',
+                ),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     color: Colors.orange.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(6),
@@ -2958,8 +2884,7 @@ class _GerenciarServicosScreenState extends State<GerenciarServicosScreen> {
       _mostrarSnack('Erro de conexão com o servidor.');
     }
   }
-
-  Future<void> _atualizarServicoAPI(int id, String nome, double preco, String categoria, String foto) async {
+Future<void> _atualizarServicoAPI(int id, String nome, double preco, String categoria, String foto) async {
     try {
       final response = await http.put(
         Uri.parse('$_apiUrl/$id'),
@@ -2983,18 +2908,22 @@ class _GerenciarServicosScreenState extends State<GerenciarServicosScreen> {
       _mostrarSnack('Erro de conexão com o servidor.');
     }
   }
-
   void _mostrarSnack(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  void _abrirDialogoNovoServico() {
-    final nomeCtrl = TextEditingController();
-    final precoCtrl = TextEditingController();
-    String categoriaSelecionada = 'Cabelo';
-    String fotoBase64 = '';
-    Uint8List? imagemBytesWeb;
+  void _abrirDialogoNovoServico({Map<String, dynamic>? servicoExistente}) {
+    final bool editando = servicoExistente != null;
+    final nomeCtrl = TextEditingController(text: servicoExistente?['nome'] ?? '');
+    final precoCtrl = TextEditingController(
+      text: servicoExistente != null ? (double.tryParse('${servicoExistente['preco']}') ?? 0).toStringAsFixed(2) : '',
+    );
+    String categoriaSelecionada = servicoExistente?['categoria'] ?? 'Cabelo';
+    String fotoBase64 = servicoExistente?['foto'] ?? '';
+    Uint8List? imagemBytesWeb = fotoBase64.startsWith('data:image')
+        ? base64Decode(fotoBase64.split(',')[1])
+        : null;
     XFile? imagemXFile;
 
     showDialog(
@@ -3016,7 +2945,10 @@ class _GerenciarServicosScreenState extends State<GerenciarServicosScreen> {
 
           return AlertDialog(
             backgroundColor: _cardDark,
-            title: const Text('CADASTRAR / DEFINIR SERVIÇO', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
+            title: Text(
+              editando ? 'EDITAR SERVIÇO' : 'CADASTRAR / DEFINIR SERVIÇO',
+              style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+            ),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -3130,191 +3062,27 @@ class _GerenciarServicosScreenState extends State<GerenciarServicosScreen> {
                   final preco = double.tryParse(precoCtrl.text.trim().replaceAll(',', '.'));
                   if (nomeCtrl.text.trim().isNotEmpty && preco != null) {
                     Navigator.pop(ctx);
-                    _salvarPrecoAPI(
-                      nomeCtrl.text.trim(), 
-                      preco, 
-                      categoriaSelecionada, 
-                      fotoBase64
-                    );
-                  } else {
-                    _mostrarSnack('Preencha nome e um preço válido.');
-                  }
-                },
-                child: const Text('Salvar', style: TextStyle(color: Colors.white)),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  // NOVA FUNÇÃO: Diálogo para Editar Serviço Existente
-  void _abrirDialogoEditarServico(Map<String, dynamic> servico) {
-    final int id = servico['id'];
-    final nomeCtrl = TextEditingController(text: servico['nome'] ?? '');
-    final precoCtrl = TextEditingController(text: servico['preco']?.toString() ?? '');
-    
-    // Valida se a categoria existe na lista permitida, caso contrário define 'Cabelo' como padrão
-    String categoriaAtual = servico['categoria'] ?? 'Cabelo';
-    const categoriasValidas = ['Cabelo', 'Barba', 'Tratamentos', 'Química'];
-    if (!categoriasValidas.contains(categoriaAtual)) {
-      categoriaAtual = 'Cabelo';
-    }
-    String categoriaSelecionada = categoriaAtual;
-
-    String fotoBase64 = servico['foto'] ?? '';
-    Uint8List? imagemBytesWeb;
-
-    // Se já houver imagem em base64 salva, decodifica para exibição prévia
-    if (fotoBase64.startsWith('data:image')) {
-      try {
-        imagemBytesWeb = base64Decode(fotoBase64.split(',')[1]);
-      } catch (_) {}
-    }
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          Future<void> selecionarImagem(ImageSource source) async {
-            final picker = ImagePicker();
-            final pickedFile = await picker.pickImage(source: source, imageQuality: 70);
-            if (pickedFile != null) {
-              final bytes = await pickedFile.readAsBytes();
-              setDialogState(() {
-                imagemBytesWeb = bytes;
-                fotoBase64 = 'data:image/jpeg;base64,${base64Encode(bytes)}';
-              });
-            }
-          }
-
-          return AlertDialog(
-            backgroundColor: _cardDark,
-            title: const Text('EDITAR SERVIÇO', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  GestureDetector(
-                    onTap: () {
-                      showModalBottomSheet(
-                        context: context,
-                        backgroundColor: _cardDark,
-                        builder: (_) => SafeArea(
-                          child: Wrap(
-                            children: [
-                              ListTile(
-                                leading: const Icon(Icons.camera_alt, color: Colors.white),
-                                title: const Text('Tirar Foto com a Câmera', style: TextStyle(color: Colors.white)),
-                                onTap: () {
-                                  Navigator.pop(context);
-                                  selecionarImagem(ImageSource.camera);
-                                },
-                              ),
-                              ListTile(
-                                leading: const Icon(Icons.photo_library, color: Colors.white),
-                                title: const Text('Escolher da Galeria', style: TextStyle(color: Colors.white)),
-                                onTap: () {
-                                  Navigator.pop(context);
-                                  selecionarImagem(ImageSource.gallery);
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
+                    if (editando) {
+                      _atualizarServicoAPI(
+                        servicoExistente!['id'] as int,
+                        nomeCtrl.text.trim(),
+                        preco,
+                        categoriaSelecionada,
+                        fotoBase64,
                       );
-                    },
-                    child: Container(
-                      width: 80,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1C1C1C),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.white24),
-                      ),
-                      child: imagemBytesWeb != null
-                          ? ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: Image.memory(imagemBytesWeb!, fit: BoxFit.cover),
-                            )
-                          : (fotoBase64.isNotEmpty && !fotoBase64.startsWith('data:image'))
-                              ? ClipRRect(
-                                  borderRadius: BorderRadius.circular(12),
-                                  child: Image.network(fotoBase64, fit: BoxFit.cover, errorBuilder: (_,__,___) => Icon(Icons.image, color: _brandRed)),
-                                )
-                              : Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.add_a_photo, color: _brandRed, size: 28),
-                                    const SizedBox(height: 4),
-                                    const Text('Foto', style: TextStyle(color: Colors.white54, fontSize: 10)),
-                                  ],
-                                ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  TextField(
-                    controller: nomeCtrl,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: const InputDecoration(labelText: 'Nome do Serviço', labelStyle: TextStyle(color: Colors.grey)),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    value: categoriaSelecionada,
-                    dropdownColor: _cardDark,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: const InputDecoration(
-                      labelText: 'Categoria',
-                      labelStyle: TextStyle(color: Colors.grey),
-                    ),
-                    items: const [
-                      DropdownMenuItem(value: 'Cabelo', child: Text('Cabelo')),
-                      DropdownMenuItem(value: 'Barba', child: Text('Barba')),
-                      DropdownMenuItem(value: 'Tratamentos', child: Text('Tratamentos')),
-                      DropdownMenuItem(value: 'Química', child: Text('Química')),
-                    ],
-                    onChanged: (v) {
-                      setDialogState(() {
-                        categoriaSelecionada = v ?? 'Cabelo';
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: precoCtrl,
-                    keyboardType: TextInputType.number,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: const InputDecoration(labelText: 'Preço (Ex: 35.00)', labelStyle: TextStyle(color: Colors.grey)),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: _brandRed),
-                onPressed: () {
-                  final preco = double.tryParse(precoCtrl.text.trim().replaceAll(',', '.'));
-                  if (nomeCtrl.text.trim().isNotEmpty && preco != null) {
-                    Navigator.pop(ctx);
-                    _atualizarServicoAPI(
-                      id,
-                      nomeCtrl.text.trim(), 
-                      preco, 
-                      categoriaSelecionada, 
-                      fotoBase64
-                    );
+                    } else {
+                      _salvarPrecoAPI(
+                        nomeCtrl.text.trim(), 
+                        preco, 
+                        categoriaSelecionada, 
+                        fotoBase64
+                      );
+                    }
                   } else {
                     _mostrarSnack('Preencha nome e um preço válido.');
                   }
                 },
-                child: const Text('Atualizar', style: TextStyle(color: Colors.white)),
+                child: Text(editando ? 'Salvar Alterações' : 'Salvar', style: const TextStyle(color: Colors.white)),
               ),
             ],
           );
@@ -3428,17 +3196,380 @@ class _GerenciarServicosScreenState extends State<GerenciarServicosScreen> {
                               'R\$ ${preco.toStringAsFixed(2).replaceAll('.', ',')}',
                               style: TextStyle(color: _brandRed, fontWeight: FontWeight.bold, fontSize: 14),
                             ),
-                            const SizedBox(width: 4),
-                            // Botão de Editar adicionado aqui
                             IconButton(
-                              icon: const Icon(Icons.edit_outlined, color: Colors.white70, size: 20),
+                              icon: const Icon(Icons.edit_outlined, color: Colors.orangeAccent, size: 20),
                               tooltip: 'Editar Serviço',
-                              onPressed: () => _abrirDialogoEditarServico(s),
+                              onPressed: () => _abrirDialogoNovoServico(servicoExistente: s),
                             ),
                             IconButton(
                               icon: const Icon(Icons.delete_outline, color: Colors.white38, size: 20),
-                              tooltip: 'Remover Serviço',
                               onPressed: () => _removerServicoAPI(s['id']),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+    );
+  }
+}
+
+// ==============================================================================
+// GERENCIAR PLANOS DE ASSINATURA (CATÁLOGO EXIBIDO NO SITE)
+// ==============================================================================
+
+class GerenciarPlanosScreen extends StatefulWidget {
+  const GerenciarPlanosScreen({super.key});
+
+  @override
+  State<GerenciarPlanosScreen> createState() => _GerenciarPlanosScreenState();
+}
+
+class _GerenciarPlanosScreenState extends State<GerenciarPlanosScreen> {
+  final Color _bgDark = const Color(0xFF0A0A0A);
+  final Color _cardDark = const Color(0xFF161618);
+  final Color _brandRed = const Color(0xFFE5243B);
+  final Color _textSecondary = const Color(0xFF9CA3AF);
+
+  final String _apiUrl = '${AppConfig.apiUrl}/admin/planos';
+
+  List<dynamic> _planos = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _carregarPlanos();
+  }
+
+  Future<void> _carregarPlanos() async {
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+    try {
+      final response = await http.get(Uri.parse(_apiUrl), headers: AppConfig.adminHeaders);
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        setState(() {
+          _planos = data['planos'] ?? [];
+          _isLoading = false;
+        });
+      } else {
+        setState(() => _isLoading = false);
+        _mostrarSnack('Erro ao carregar planos.');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      _mostrarSnack('Erro de conexão com o servidor.');
+    }
+  }
+
+  Future<void> _cadastrarPlanoAPI(String nome, String descricao, double preco, int ordem) async {
+    try {
+      final response = await http.post(
+        Uri.parse(_apiUrl),
+        headers: AppConfig.adminHeaders,
+        body: jsonEncode({'nome': nome, 'descricao': descricao, 'preco': preco, 'ordem': ordem}),
+      );
+      final resData = jsonDecode(response.body);
+      if (!mounted) return;
+      if ((response.statusCode == 200 || response.statusCode == 201) && resData['sucesso'] == true) {
+        _mostrarSnack('✅ Plano cadastrado com sucesso!');
+        _carregarPlanos();
+      } else {
+        _mostrarSnack('❌ ${resData['mensagem'] ?? 'Falha ao cadastrar.'}');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _mostrarSnack('Erro de conexão com o servidor.');
+    }
+  }
+
+  Future<void> _atualizarPlanoAPI(int id, String nome, String descricao, double preco, int ordem) async {
+    try {
+      final response = await http.put(
+        Uri.parse('$_apiUrl/$id'),
+        headers: AppConfig.adminHeaders,
+        body: jsonEncode({'nome': nome, 'descricao': descricao, 'preco': preco, 'ordem': ordem}),
+      );
+      final resData = jsonDecode(response.body);
+      if (!mounted) return;
+      if (response.statusCode == 200 && (resData['sucesso'] == true || resData['sucesso'] == null)) {
+        _mostrarSnack('✅ Plano atualizado com sucesso!');
+        _carregarPlanos();
+      } else {
+        _mostrarSnack('❌ ${resData['mensagem'] ?? 'Erro ao atualizar plano.'}');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _mostrarSnack('Erro de conexão com o servidor.');
+    }
+  }
+
+  Future<void> _removerPlanoAPI(int id) async {
+    try {
+      final response = await http.delete(Uri.parse('$_apiUrl/$id'), headers: AppConfig.adminHeaders);
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        _mostrarSnack('🗑️ Plano removido!');
+        _carregarPlanos();
+      } else {
+        _mostrarSnack('Erro ao remover plano.');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _mostrarSnack('Erro de conexão com o servidor.');
+    }
+  }
+
+  void _mostrarSnack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  Future<void> _confirmarRemocao(int id) async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _cardDark,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('EXCLUIR PLANO', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+        content: const Text('Tem certeza de que deseja remover este plano permanentemente?', style: TextStyle(color: Colors.grey)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: _brandRed, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Excluir', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmar == true) {
+      _removerPlanoAPI(id);
+    }
+  }
+
+  void _abrirDialogoPlano({Map<String, dynamic>? planoExistente}) {
+    final bool editando = planoExistente != null;
+    final nomeCtrl = TextEditingController(text: planoExistente?['nome'] ?? '');
+    final descricaoCtrl = TextEditingController(text: planoExistente?['descricao'] ?? '');
+    final precoCtrl = TextEditingController(
+      text: planoExistente != null ? (double.tryParse('${planoExistente['preco']}') ?? 0).toStringAsFixed(2) : '',
+    );
+    final ordemCtrl = TextEditingController(text: '${planoExistente?['ordem'] ?? 0}');
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _cardDark,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          editando ? 'EDITAR PLANO' : 'NOVO PLANO DE ASSINATURA',
+          style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nomeCtrl,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(labelText: 'Nome do Plano', labelStyle: TextStyle(color: Colors.grey)),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: descricaoCtrl,
+                maxLines: 2,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(labelText: 'Descrição (aparece no site)', labelStyle: TextStyle(color: Colors.grey)),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: precoCtrl,
+                keyboardType: TextInputType.number,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(labelText: 'Preço mensal (Ex: 99.90)', labelStyle: TextStyle(color: Colors.grey)),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: ordemCtrl,
+                keyboardType: TextInputType.number,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  labelText: 'Ordem de exibição (0 = primeiro)',
+                  labelStyle: TextStyle(color: Colors.grey),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: _brandRed, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+            onPressed: () {
+              final preco = double.tryParse(precoCtrl.text.trim().replaceAll(',', '.'));
+              final ordem = int.tryParse(ordemCtrl.text.trim()) ?? 0;
+              if (nomeCtrl.text.trim().isNotEmpty && preco != null) {
+                Navigator.pop(ctx);
+                if (editando) {
+                  _atualizarPlanoAPI(planoExistente!['id'] as int, nomeCtrl.text.trim(), descricaoCtrl.text.trim(), preco, ordem);
+                } else {
+                  _cadastrarPlanoAPI(nomeCtrl.text.trim(), descricaoCtrl.text.trim(), preco, ordem);
+                }
+              } else {
+                _mostrarSnack('Preencha nome e um preço válido.');
+              }
+            },
+            child: Text(editando ? 'Salvar Alterações' : 'Salvar', style: const TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _bgDark,
+      appBar: AppBar(
+        backgroundColor: _bgDark,
+        elevation: 0,
+        centerTitle: true,
+        title: const Text('PLANOS DE ASSINATURA', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold, letterSpacing: 1.1)),
+        iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          IconButton(icon: const Icon(Icons.refresh, size: 22), onPressed: _carregarPlanos),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: _brandRed,
+        elevation: 4,
+        icon: const Icon(Icons.add, color: Colors.white),
+        label: const Text('Novo Plano', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        onPressed: () => _abrirDialogoPlano(),
+      ),
+      body: _isLoading
+          ? Center(child: CircularProgressIndicator(color: _brandRed))
+          : _planos.isEmpty
+              ? Center(child: Text('Nenhum plano cadastrado.', style: TextStyle(color: _textSecondary)))
+              : RefreshIndicator(
+                  onRefresh: _carregarPlanos,
+                  color: _brandRed,
+                  child: ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _planos.length,
+                    itemBuilder: (context, index) {
+                      final p = _planos[index];
+                      final double preco = double.tryParse(p['preco'].toString()) ?? 0;
+                      final bool ativo = (p['ativo'] ?? 1).toString() == '1' || p['ativo'] == true;
+
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 16),
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          color: _cardDark,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: ativo ? Colors.white.withOpacity(0.06) : _brandRed.withOpacity(0.3),
+                            width: 1,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.3),
+                              blurRadius: 8,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    p['nome'] ?? '',
+                                    style: TextStyle(
+                                      color: ativo ? Colors.white : Colors.white38,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  'R\$ ${preco.toStringAsFixed(2).replaceAll('.', ',')}/mês',
+                                  style: TextStyle(color: _brandRed, fontWeight: FontWeight.bold, fontSize: 15),
+                                ),
+                              ],
+                            ),
+                            if ((p['descricao'] ?? '').toString().isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              Text(
+                                p['descricao'],
+                                style: TextStyle(color: _textSecondary, fontSize: 13, height: 1.3),
+                              ),
+                            ],
+                            const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 12),
+                              child: Divider(color: Colors.white10, height: 1),
+                            ),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                if (!ativo)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: const Text('OCULTO NO SITE', style: TextStyle(color: Colors.redAccent, fontSize: 9, fontWeight: FontWeight.bold)),
+                                  )
+                                else
+                                  const SizedBox.shrink(),
+                                Row(
+                                  children: [
+                                    InkWell(
+                                      onTap: () => _abrirDialogoPlano(planoExistente: p),
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withOpacity(0.05),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: const Icon(Icons.edit_outlined, color: Colors.orangeAccent, size: 18),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    InkWell(
+                                      onTap: () => _confirmarRemocao(p['id']),
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withOpacity(0.05),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: const Icon(Icons.delete_outline, color: Colors.white54, size: 18),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ),
                           ],
                         ),

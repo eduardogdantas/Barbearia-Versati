@@ -2,6 +2,7 @@ from datetime import datetime
 import os
 import pymysql
 from dotenv import load_dotenv
+from werkzeug.security import generate_password_hash
 
 load_dotenv()
 
@@ -159,10 +160,40 @@ def init_db():
                     nome VARCHAR(150) NOT NULL UNIQUE,
                     preco DECIMAL(10, 2) NOT NULL DEFAULT 0,
                     categoria VARCHAR(80) NOT NULL DEFAULT 'Geral',
-                    foto VARCHAR(255) DEFAULT '',
+                    foto MEDIUMTEXT,
                     criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 ) ENGINE=InnoDB;
             ''')
+
+            # TABELA 8: Catálogo de Planos de Assinatura (nome/preço/descrição exibidos
+            # na página "Planos de Assinatura" do site e editáveis pelo app admin)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS planos_assinatura (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    nome VARCHAR(150) NOT NULL,
+                    descricao VARCHAR(255) DEFAULT '',
+                    preco DECIMAL(10, 2) NOT NULL DEFAULT 0,
+                    ordem INT DEFAULT 0,
+                    ativo TINYINT(1) DEFAULT 1,
+                    criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB;
+            ''')
+
+            # Popular o catálogo de planos com os que já existem hoje fixos no site,
+            # só na primeira vez (assim você não perde os que já tem cadastrado).
+            cursor.execute("SELECT COUNT(*) AS total FROM planos_assinatura;")
+            if cursor.fetchone()["total"] == 0:
+                planos_padrao = [
+                    ("Plano Corte Ilimitado Básico", "Corte quantas vezes quiser de segunda a quarta!", 79.90, 1),
+                    ("Plano Corte Ilimitado Premium", "Cortes ilimitados, qualquer dia da semana!", 99.90, 2),
+                    ("Plano Corte + Barba Ilimitado", "Cabelo + barba ilimitado durante o mês inteiro.", 149.90, 3),
+                ]
+                for nome, descricao, preco, ordem in planos_padrao:
+                    cursor.execute(
+                        "INSERT INTO planos_assinatura (nome, descricao, preco, ordem) VALUES (%s, %s, %s, %s)",
+                        (nome, descricao, preco, ordem)
+                    )
+                print("💳 Catálogo de planos de assinatura populado com os planos padrão!")
 
             # Migrações formais e seguras por Schema Check
             migracoes = [
@@ -175,7 +206,8 @@ def init_db():
                 ("agendamentos", "preco", "ALTER TABLE agendamentos ADD COLUMN preco DECIMAL(10, 2) DEFAULT 0;"),
                 ("usuarios", "telefone", "ALTER TABLE usuarios ADD COLUMN telefone VARCHAR(20);"),
                 ("servicos", "categoria", "ALTER TABLE servicos ADD COLUMN categoria VARCHAR(80) NOT NULL DEFAULT 'Geral';"),
-                ("servicos", "foto", "ALTER TABLE servicos ADD COLUMN foto VARCHAR(255) DEFAULT '';"),
+                ("servicos", "foto", "ALTER TABLE servicos ADD COLUMN foto MEDIUMTEXT;"),
+                ("produtos", "foto", "ALTER TABLE produtos ADD COLUMN foto MEDIUMTEXT;"),
             ]
 
             for tabela, coluna, comando_sql in migracoes:
@@ -183,7 +215,15 @@ def init_db():
                     cursor.execute(comando_sql)
                     print(f"🔧 Migração aplicada: coluna '{coluna}' adicionada na tabela '{tabela}'.")
 
-            # Popular dados iniciais
+            # Corrige o tamanho da coluna 'foto' caso já exista pequena demais
+            # (imagens em base64 não cabem em VARCHAR(255)).
+            for tabela in ("servicos", "produtos"):
+                try:
+                    cursor.execute(f"ALTER TABLE {tabela} MODIFY COLUMN foto MEDIUMTEXT;")
+                except Exception:
+                    pass
+
+            # Popular dados iniciais de barbeiros
             barbeiros_padrao = [
                 ('Willian Bruno', 'Barbeiro Master', 'Cortes Clássicos e Barba', '(83) 98642-9833'),
                 ('Luan', 'Barbeiro', 'Cortes em Geral', ''),
@@ -196,6 +236,22 @@ def init_db():
                         (nome, cargo, especialidade, telefone),
                     )
                     print(f"💈 Barbeiro '{nome}' cadastrado com sucesso!")
+
+            # Garantir o utilizador Administrador padrão (senha SEMPRE com hash, nunca em texto plano)
+            senha_admin_hash = generate_password_hash('La20072016')
+            cursor.execute("SELECT id FROM usuarios WHERE email = %s", ('eduardogdantasjp@gmail.com',))
+            if not cursor.fetchone():
+                cursor.execute(
+                    'INSERT INTO usuarios (nome, email, senha, telefone) VALUES (%s, %s, %s, %s)',
+                    ('Eduardo Admin', 'eduardogdantasjp@gmail.com', senha_admin_hash, '(83) 98813-9461')
+                )
+                print("👑 Utilizador Administrador padrão criado com sucesso!")
+            else:
+                # Atualiza a senha caso já exista, sempre com hash
+                cursor.execute(
+                    "UPDATE usuarios SET senha = %s WHERE email = %s",
+                    (senha_admin_hash, 'eduardogdantasjp@gmail.com')
+                )
 
         conn.close()
         print('✅ Banco de dados e tabelas criados/verificados com sucesso!')

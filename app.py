@@ -246,13 +246,107 @@ def processar_renovacao_assinatura(cliente_id, cartao_token, valor):
         cursor.close()
         conn.close()
 
+# ==============================================================================
+# ROTAS DE PLANOS DE ASSINATURA (CATÁLOGO — NOME/PREÇO/DESCRIÇÃO)
+# ==============================================================================
+@app.route('/api/planos', methods=['GET'])
+def listar_planos_site():
+    """Rota pública: o site usa para montar a página 'Planos de Assinatura'."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT id, nome, descricao, preco FROM planos_assinatura "
+                "WHERE ativo = 1 ORDER BY ordem ASC, preco ASC"
+            )
+            planos = cursor.fetchall()
+            return jsonify({'sucesso': True, 'planos': planos}), 200
+    except Exception as e:
+        app.logger.error("Erro em listar_planos_site: %s", e)
+        return jsonify({'sucesso': False, 'planos': [], 'mensagem': 'Erro interno.'}), 500
+    finally:
+        conn.close()
+
+
+@app.route('/api/admin/planos', methods=['GET', 'POST'])
+@admin_required
+def gerenciar_planos_catalogo():
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            if request.method == 'POST':
+                data = request.get_json() or {}
+                nome = (data.get('nome') or '').strip()
+                descricao = (data.get('descricao') or '').strip()
+                preco = data.get('preco', 0)
+                ordem = data.get('ordem', 0)
+
+                if not nome:
+                    return jsonify({'sucesso': False, 'mensagem': 'Nome obrigatório'}), 400
+
+                cursor.execute(
+                    "INSERT INTO planos_assinatura (nome, descricao, preco, ordem) VALUES (%s, %s, %s, %s)",
+                    (nome, descricao, preco, ordem)
+                )
+                conn.commit()
+                return jsonify({'sucesso': True, 'mensagem': 'Plano cadastrado!', 'id': cursor.lastrowid}), 201
+
+            cursor.execute(
+                "SELECT id, nome, descricao, preco, ordem, ativo FROM planos_assinatura ORDER BY ordem ASC, preco ASC"
+            )
+            planos = cursor.fetchall()
+            return jsonify({'sucesso': True, 'planos': planos}), 200
+    except Exception as e:
+        conn.rollback()
+        app.logger.error("Erro em gerenciar_planos_catalogo: %s", e)
+        return jsonify({'sucesso': False, 'mensagem': 'Erro interno. Tente novamente.'}), 500
+    finally:
+        conn.close()
+
+
+@app.route('/api/admin/planos/<int:plano_id>', methods=['PUT', 'DELETE'])
+@admin_required
+def editar_ou_remover_plano_catalogo(plano_id):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            if request.method == 'DELETE':
+                cursor.execute("DELETE FROM planos_assinatura WHERE id = %s", (plano_id,))
+                conn.commit()
+                return jsonify({'sucesso': True, 'mensagem': 'Plano removido!'}), 200
+
+            data = request.get_json() or {}
+            campos = []
+            valores = []
+            for campo in ('nome', 'descricao', 'preco', 'ordem', 'ativo'):
+                if campo in data:
+                    campos.append(f"{campo} = %s")
+                    valores.append(data[campo])
+            if not campos:
+                return jsonify({'sucesso': False, 'mensagem': 'Nada para atualizar.'}), 400
+
+            valores.append(plano_id)
+            cursor.execute(f"UPDATE planos_assinatura SET {', '.join(campos)} WHERE id = %s", valores)
+            conn.commit()
+            return jsonify({'sucesso': True, 'mensagem': 'Plano atualizado!'}), 200
+    except Exception as e:
+        conn.rollback()
+        app.logger.error("Erro em editar_ou_remover_plano_catalogo: %s", e)
+        return jsonify({'sucesso': False, 'mensagem': 'Erro interno. Tente novamente.'}), 500
+    finally:
+        conn.close()
+
+
 @app.route('/api/servicos', methods=['GET'])
 def listar_servicos_site():
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
             try:
-                cursor.execute("SELECT id, nome, preco, IFNULL(foto, '') AS foto FROM servicos ORDER BY nome ASC")
+                cursor.execute(
+                    "SELECT id, nome, preco, categoria, IFNULL(foto, '') AS foto "
+                    "FROM servicos ORDER BY categoria ASC, nome ASC"
+                )
                 servicos = cursor.fetchall()
             except Exception:
                 cursor.execute("SELECT id, nome, preco, categoria FROM servicos ORDER BY categoria ASC, nome ASC")
@@ -582,36 +676,24 @@ def gerenciar_produtos():
             if request.method == 'POST':
                 data = request.get_json() or {}
                 nome = data.get('nome')
-                descricao = data.get('descricao') or data.get('categoria') or 'Cuidados profissionais para cabelo e barba.'
+                descricao = data.get('descricao') or 'Cuidados profissionais'
                 preco = data.get('preco', 0)
                 estoque = data.get('estoque', 0)
+                foto = (data.get('foto') or '').strip() # Captura a foto enviada
 
                 if not nome:
                     return jsonify({'sucesso': False, 'mensagem': 'Nome obrigatório'}), 400
 
-                try:
-                    cursor.execute(
-                        "INSERT INTO produtos (nome, descricao, preco, estoque) VALUES (%s, %s, %s, %s)",
-                        (nome, descricao, preco, estoque)
-                    )
-                except Exception:
-                    cursor.execute(
-                        "INSERT INTO produtos (nome, categoria, preco, estoque) VALUES (%s, %s, %s, %s)",
-                        (nome, descricao, preco, estoque)
-                    )
-
+                cursor.execute(
+                    "INSERT INTO produtos (nome, descricao, preco, estoque, foto) VALUES (%s, %s, %s, %s, %s)",
+                    (nome, descricao, preco, estoque, foto)
+                )
                 conn.commit()
                 return jsonify({'sucesso': True, 'mensagem': 'Produto cadastrado!', 'id': cursor.lastrowid}), 201
 
-            try:
-                cursor.execute(
-                    "SELECT id, nome, descricao, preco, estoque FROM produtos WHERE ativo = 1 ORDER BY nome ASC"
-                )
-            except Exception:
-                cursor.execute(
-                    "SELECT id, nome, categoria AS descricao, preco, estoque FROM produtos WHERE ativo = 1 ORDER BY nome ASC"
-                )
-
+            cursor.execute(
+                "SELECT id, nome, descricao, preco, estoque, IFNULL(foto, '') AS foto FROM produtos WHERE ativo = 1 ORDER BY nome ASC"
+            )
             produtos = cursor.fetchall()
             return jsonify({'sucesso': True, 'produtos': produtos}), 200
     except Exception as e:
@@ -914,8 +996,8 @@ def api_login():
     finally:
         conn.close()
 
-    # Compara a senha digitada diretamente com a senha salva no banco
-    if usuario and usuario["senha"] == senha:
+    # Compara a senha digitada com o hash salvo no banco (nunca em texto plano)
+    if usuario and check_password_hash(usuario["senha"], senha):
         return jsonify({
             "sucesso": True,
             "mensagem": "Login realizado com sucesso!",
@@ -930,18 +1012,18 @@ def api_cadastro():
     dados = request.get_json() or {}
     nome = dados.get("nome")
     email = dados.get("email")
-    senha = dados.get("senha") # Senha em texto plano
+    senha = dados.get("senha")
 
     if not nome or not email or not senha:
         return jsonify({"sucesso": False, "mensagem": "Preencha todos os campos!"}), 400
 
+    senha_hash = generate_password_hash(senha)
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            # Salva a senha diretamente sem criptografia
             cursor.execute(
                 "INSERT INTO usuarios (nome, email, senha) VALUES (%s, %s, %s)",
-                (nome, email, senha)
+                (nome, email, senha_hash)
             )
             conn.commit()
         return jsonify({"sucesso": True, "mensagem": "Cadastro realizado!"}), 201
