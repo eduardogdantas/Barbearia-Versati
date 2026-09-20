@@ -127,6 +127,13 @@
             transition: border-color 0.2s;
         }
         .btn-voltar:hover { border-color: var(--text); }
+        
+        .sem-planos {
+            grid-column: 1 / -1;
+            color: var(--text-dim);
+            padding: 40px 0;
+            font-size: 1.1rem;
+        }
     </style>
 </head>
 <body>
@@ -136,53 +143,24 @@
         <p class="subtitle">Escolha o plano ideal para cuidar do seu visual todo mês.</p>
         
         <div class="plans-grid">
-            <!-- Plano 1 -->
-            <div class="plan-card">
-                <div>
-                    <h3>Plano Corte + Barba Ilimitado</h3>
-                    <div class="plan-desc">Cabelo + barba ilimitado durante o mês inteiro.</div>
+            {% if planos and planos|length > 0 %}
+                {% for plano in planos %}
+                <div class="plan-card">
+                    <div>
+                        <h3>{{ plano.nome }}</h3>
+                        <div class="plan-desc">{{ plano.descricao or '' }}</div>
+                    </div>
+                    <div class="plan-footer">
+                        <span class="preco">R$ {{ "%.2f"|format(plano.preco)|replace('.', ',') }}/mês</span>
+                        <button class="btn-assinar" onclick="assinarPlano('{{ plano.nome }}', '{{ plano.preco }}')">
+                            Assinar agora
+                        </button>
+                    </div>
                 </div>
-                <div class="plan-footer">
-                    <span class="preco">R$ 149,90/mês</span>
-                    <button class="btn-assinar" onclick="assinarPlano('Plano Corte + Barba Ilimitado', 149.90)">Assinar agora</button>
-                </div>
-            </div>
-
-            <!-- Plano 2 -->
-            <div class="plan-card">
-                <div>
-                    <h3>Plano Corte Ilimitado Premium</h3>
-                    <div class="plan-desc">Cortes ilimitados, qualquer dia da semana!</div>
-                </div>
-                <div class="plan-footer">
-                    <span class="preco">R$ 99,90/mês</span>
-                    <button class="btn-assinar" onclick="assinarPlano('Plano Corte Ilimitado Premium', 99.90)">Assinar agora</button>
-                </div>
-            </div>
-
-            <!-- Plano 3 -->
-            <div class="plan-card">
-                <div>
-                    <h3>Plano Corte Ilimitado Básico</h3>
-                    <div class="plan-desc">Corte quantas vezes quiser de segunda a quarta!</div>
-                </div>
-                <div class="plan-footer">
-                    <span class="preco">R$ 79,90/mês</span>
-                    <button class="btn-assinar" onclick="assinarPlano('Plano Corte Ilimitado Básico', 79.90)">Assinar agora</button>
-                </div>
-            </div>
-
-            <!-- Plano 4 -->
-            <div class="plan-card">
-                <div>
-                    <h3>Plano Barba Ilimitado</h3>
-                    <div class="plan-desc">Faça a barba até 1 vez por semana com prioridade.</div>
-                </div>
-                <div class="plan-footer">
-                    <span class="preco">R$ 99,90/mês</span>
-                    <button class="btn-assinar" onclick="assinarPlano('Plano Barba Ilimitado', 99.90)">Assinar agora</button>
-                </div>
-            </div>
+                {% endfor %}
+            {% else %}
+                <div class="sem-planos">Nenhum plano disponível no momento.</div>
+            {% endif %}
         </div>
 
         <a href="/" class="btn-voltar">Voltar ao Início</a>
@@ -190,7 +168,7 @@
 
     <script>
         function assinarPlano(nomePlano, preco) {
-            const clienteId = "{{ session.get('cliente_id', '') }}";
+            const clienteId = "{{ cliente_id or '' }}";
             
             if (!clienteId) {
                 alert("Por favor, faça login na sua conta para contratar um plano!");
@@ -198,7 +176,6 @@
                 return;
             }
 
-            // Redireciona diretamente para o formulário de cadastro do cartão de crédito
             const planoEncoded = encodeURIComponent(nomePlano);
             window.location.href = `/checkout-plano?plano=${planoEncoded}&preco=${preco}`;
         }

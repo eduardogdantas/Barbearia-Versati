@@ -104,13 +104,12 @@ def processar_pagamento_cartao():
     nome_plano = dados.get("nome_plano", "Plano Barbearia")
     cliente_id = dados.get("cliente_id") or session.get("cliente_id")
     
-    # Dados obrigatórios vindos do frontend
     token_cartao = dados.get("token")
-    payment_method_id = dados.get("payment_method_id") # Ex: master, visa
+    payment_method_id = dados.get("payment_method_id")
     email = dados.get("email")
     cpf_raw = dados.get("cpf")
 
-    if not token_cartao or not payment_method_id or not email or not cpf_raw:
+    if not token_cartao or not email or not cpf_raw:
         return jsonify({
             "sucesso": False, 
             "mensagem": "Dados de pagamento incompletos. Informe o cartão, e-mail e CPF."
@@ -128,58 +127,76 @@ def processar_pagamento_cartao():
             "sucesso": False, 
             "mensagem": "CPF inválido."
         }), 400
-    
-    payment_data = {
-        "transaction_amount": valor,
-        "description": f"Assinatura {nome_plano} - Barbearia Versati",
-        "payment_method_id": payment_method_id,
-        "token": token_cartao,
-        "installments": 1,
-        "payer": {
-            "email": email,
-            "identification": {"type": "CPF", "number": cpf}
+
+    # Payload de Assinatura Recorrente Mensal (Ciclos de 30 dias no Mercado Pago)
+    preapproval_data = {
+        "payer_email": email,
+        "back_url": "http://127.0.0.1:5000/minha-assinatura",
+        "reason": f"Assinatura {nome_plano} - Barbearia Versati",
+        "external_reference": str(cliente_id),
+        "auto_recurring": {
+            "frequency": 1,
+            "frequency_type": "months",
+            "transaction_amount": valor,
+            "currency_id": "BRL"
         },
-        "metadata": {
-            "cliente_id": cliente_id,
-            "nome_plano": nome_plano,
-            "preco": valor
-        }
+        "card_token_id": token_cartao,
+        "status": "authorized"
     }
 
     try:
-        payment_response = sdk.payment().create(payment_data)
-        payment = payment_response.get("response", {})
+        # Cria a assinatura recorrente no gateway
+        preapproval_response = sdk.preapproval().create(preapproval_data)
+        response_data = preapproval_response.get("response", {})
+        status_sub = response_data.get("status")
 
-        if payment_response.get("status") in [200, 201] and payment.get("status") == "approved":
+        # Status 'authorized' confirma o primeiro desconto no cartão
+        if preapproval_response.get("status") in [200, 201] and status_sub == "authorized":
+            subscription_id = response_data.get("id")
             data_inicio = datetime.now().date()
             data_renovacao = data_inicio + timedelta(days=30)
-            
+
             conn = get_db_connection()
             try:
                 with conn.cursor() as cursor:
-                    cursor.execute(
-                        "INSERT INTO assinaturas (cliente_id, nome_plano, preco, status, data_inicio, data_renovacao) VALUES (%s, %s, %s, 'ativo', %s, %s)",
-                        (cliente_id, nome_plano, valor, data_inicio, data_renovacao)
-                    )
+                    # Se já existia registro, atualiza com o novo subscription_id
+                    cursor.execute("SELECT id FROM assinaturas WHERE cliente_id = %s", (cliente_id,))
+                    existente = cursor.fetchone()
+
+                    if existente:
+                        cursor.execute("""
+                            UPDATE assinaturas 
+                            SET nome_plano = %s, preco = %s, status = 'ativo', 
+                                data_inicio = %s, data_renovacao = %s, 
+                                gateway_subscription_id = %s 
+                            WHERE cliente_id = %s
+                        """, (nome_plano, valor, data_inicio, data_renovacao, subscription_id, cliente_id))
+                    else:
+                        cursor.execute("""
+                            INSERT INTO assinaturas 
+                            (cliente_id, nome_plano, preco, status, data_inicio, data_renovacao, gateway_subscription_id) 
+                            VALUES (%s, %s, %s, 'ativo', %s, %s, %s)
+                        """, (cliente_id, nome_plano, valor, data_inicio, data_renovacao, subscription_id))
                     conn.commit()
             finally:
                 conn.close()
 
             return jsonify({
                 "sucesso": True, 
-                "mensagem": "Pagamento aprovado!",
+                "mensagem": "Assinatura contratada com sucesso!",
+                "subscription_id": subscription_id,
                 "renovacao": data_renovacao.strftime("%d/%m/%Y")
             }), 200
         else:
             return jsonify({
                 "sucesso": False, 
-                "mensagem": "Pagamento recusado pelo gateway.",
-                "detalhes": payment
+                "mensagem": "Pagamento recusado pela operadora do cartão.",
+                "detalhes": response_data
             }), 400
 
     except Exception as e:
         app.logger.error("Erro em processar_pagamento_cartao: %s", e)
-        return jsonify({"sucesso": False, "mensagem": "Erro interno. Tente novamente."}), 500
+        return jsonify({"sucesso": False, "mensagem": f"Erro interno: {str(e)}"}), 500
     
 @app.route('/api/admin/cancelar-assinatura', methods=['POST'])
 @admin_required
@@ -249,15 +266,25 @@ def processar_renovacao_assinatura(cliente_id, cartao_token, valor):
 # ==============================================================================
 # ROTAS DE PLANOS DE ASSINATURA (CATÁLOGO — NOME/PREÇO/DESCRIÇÃO)
 # ==============================================================================
+# ==============================================================================
+# ROTAS DE PLANOS DE ASSINATURA (CATÁLOGO — NOME/PREÇO/DESCRIÇÃO)
+# ==============================================================================
+
+# ==============================================================================
+# ROTAS DE PLANOS DE ASSINATURA (CATÁLOGO — NOME/PREÇO/DESCRIÇÃO)
+# ==============================================================================
+
 @app.route('/api/planos', methods=['GET'])
 def listar_planos_site():
-    """Rota pública: o site usa para montar a página 'Planos de Assinatura'."""
+    """Rota consumida pelo frontend web para obter todos os planos ativos."""
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
+            # Aceita ativo = 1 ou NULL para garantir que novos planos criados apareçam
             cursor.execute(
-                "SELECT id, nome, descricao, preco FROM planos_assinatura "
-                "WHERE ativo = 1 ORDER BY ordem ASC, preco ASC"
+                "SELECT id, nome, descricao, preco, ordem FROM planos_assinatura "
+                "WHERE ativo = 1 OR ativo IS NULL "
+                "ORDER BY ordem ASC, preco ASC"
             )
             planos = cursor.fetchall()
             return jsonify({'sucesso': True, 'planos': planos}), 200
@@ -266,7 +293,110 @@ def listar_planos_site():
         return jsonify({'sucesso': False, 'planos': [], 'mensagem': 'Erro interno.'}), 500
     finally:
         conn.close()
+# ==============================================================================
+# CONSULTA DE ASSINATURA E CARTÕES DO CLIENTE (PARA O MODAL DO SITE)
+# ==============================================================================
 
+@app.route("/api/minha-assinatura", methods=["GET"])
+def api_minha_assinatura():
+    cliente_id = session.get("cliente_id")
+    if not cliente_id:
+        return jsonify({"sucesso": False, "tem_assinatura": False, "mensagem": "Não autenticado"}), 401
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT 
+                    id, 
+                    nome_plano, 
+                    preco, 
+                    status,
+                    data_inicio,
+                    data_renovacao
+                FROM assinaturas 
+                WHERE cliente_id = %s AND LOWER(status) = 'ativo'
+                ORDER BY id DESC LIMIT 1
+            """, (int(cliente_id),))
+            assinatura = cursor.fetchone()
+
+        if assinatura:
+            # Formata o preço de forma segura
+            val_preco = float(assinatura.get("preco") or 0.0)
+            preco_fmt = f"R$ {val_preco:.2f}".replace('.', ',')
+
+            # Formata as datas directamente no Python sem conflito com o PyMySQL
+            dt_inicio = assinatura.get("data_inicio")
+            inicio_fmt = dt_inicio.strftime("%d/%m/%Y") if hasattr(dt_inicio, "strftime") else str(dt_inicio or "--/--/----")
+
+            dt_renovacao = assinatura.get("data_renovacao")
+            renovacao_fmt = dt_renovacao.strftime("%d/%m/%Y") if hasattr(dt_renovacao, "strftime") else str(dt_renovacao or "--/--/----")
+
+            return jsonify({
+                "sucesso": True,
+                "tem_assinatura": True,
+                "assinatura": {
+                    "id": assinatura.get("id"),
+                    "plano": str(assinatura.get("nome_plano") or "Plano"),
+                    "preco": preco_fmt,
+                    "inicio": inicio_fmt,
+                    "renovacao": renovacao_fmt
+                }
+            }), 200
+        else:
+            return jsonify({
+                "sucesso": True,
+                "tem_assinatura": False
+            }), 200
+    except Exception as e:
+        app.logger.error("Erro detalhado em api_minha_assinatura: %s", str(e))
+        return jsonify({"sucesso": False, "tem_assinatura": False, "mensagem": f"Erro interno: {str(e)}"}), 500
+    finally:
+        conn.close()
+
+
+@app.route("/api/meus-cartoes", methods=["GET"])
+def api_meus_cartoes():
+    """Rota consumida pelo modal para listar os cartões guardados."""
+    cliente_id = session.get("cliente_id")
+    if not cliente_id:
+        return jsonify({"sucesso": False, "cartoes": []}), 401
+
+    # Devolve lista vazia caso ainda não tenha tabela de cartões guardados, evitando erro 404
+    return jsonify({"sucesso": True, "cartoes": []}), 200
+@app.route("/minha-assinatura", methods=["GET"])
+def pagina_minha_assinatura():
+    if "cliente_id" not in session:
+        return redirect(url_for("login"))
+
+    cliente_id = session["cliente_id"]
+    conn = get_db_connection()
+    assinaturas = []
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT 
+                    a.id,
+                    a.nome_plano,
+                    a.preco,
+                    a.status,
+                    DATE_FORMAT(a.data_inicio, '%d/%m/%Y') AS data_inicio,
+                    DATE_FORMAT(a.data_renovacao, '%d/%m/%Y') AS validade
+                FROM assinaturas a
+                WHERE a.cliente_id = %s
+                ORDER BY a.id DESC
+            """, (cliente_id,))
+            assinaturas = cursor.fetchall()
+    except Exception as e:
+        app.logger.error("Erro em pagina_minha_assinatura: %s", e)
+    finally:
+        conn.close()
+
+    return render_template(
+        "gerenciar_assinaturas.html",
+        assinaturas=assinaturas,
+        cliente_nome=session.get("cliente_nome")
+    )
 
 @app.route('/api/admin/planos', methods=['GET', 'POST'])
 @admin_required
@@ -284,8 +414,9 @@ def gerenciar_planos_catalogo():
                 if not nome:
                     return jsonify({'sucesso': False, 'mensagem': 'Nome obrigatório'}), 400
 
+                # Força explicitamente ativo = 1 na inserção
                 cursor.execute(
-                    "INSERT INTO planos_assinatura (nome, descricao, preco, ordem) VALUES (%s, %s, %s, %s)",
+                    "INSERT INTO planos_assinatura (nome, descricao, preco, ordem, ativo) VALUES (%s, %s, %s, %s, 1)",
                     (nome, descricao, preco, ordem)
                 )
                 conn.commit()
@@ -935,49 +1066,87 @@ def verificar_status_pagamento(pagamento_id):
 
 @app.route("/api/webhook", methods=["POST"])
 def webhook_mercadopago():
-    x_signature = request.headers.get("X-Signature", "")
-    try:
-        params = dict(p.split("=") for p in x_signature.split(","))
-    except ValueError:
-        return jsonify({"status": "error", "mensagem": "X-Signature inválido"}), 400
-
-    ts, v1 = params.get("ts"), params.get("v1")
-    data_id = request.args.get("data.id") or request.json.get("data", {}).get("id")
-    secret = os.environ.get("MERCADO_PAGO_WEBHOOK_SECRET", "")
-    
-    if not ts or not v1:
-        return jsonify({"status": "error", "mensagem": "Assinatura incompleta"}), 403
-
-    manifest = f"id:{data_id};request-id:{request.headers.get('x-request-id')};ts:{ts};"
-    esperado = hmac.new(secret.encode(), manifest.encode(), hashlib.sha256).hexdigest()
-    
-    if not hmac.compare_digest(esperado, v1):
-        return jsonify({"status": "error", "mensagem": "Assinatura inválida"}), 403
-
     dados = request.get_json() or {}
     tipo_evento = request.args.get("type") or request.args.get("topic") or dados.get("type")
+    data_id = request.args.get("data.id") or dados.get("data", {}).get("id")
 
-    if tipo_evento in ["payment", "order"] and data_id:
-        try:
+    try:
+        # Quando uma mensalidade de recorrência é cobrada com sucesso
+        if tipo_evento in ["subscription_authorized_payment", "payment"] and data_id:
             info = sdk.payment().get(data_id).get("response", {})
-            
-            # Aceita estritamente o status 'approved' validado na API do MP
             if info.get("status") == "approved":
-                metadata = info.get("metadata", {})
-                cliente_id = metadata.get("cliente_id")
-                nome_plano = metadata.get("nome_plano")
+                # Verifica se é cobrança de assinatura pelo preapproval_id
+                preapproval_id = info.get("order", {}).get("id") or info.get("subscription_id")
                 
-                transaction_amount = float(info.get("transaction_amount", 0.0))
-                preco_metadata = float(metadata.get("preco", 0.0))
+                if preapproval_id:
+                    conn = get_db_connection()
+                    try:
+                        with conn.cursor() as cursor:
+                            cursor.execute("""
+                                UPDATE assinaturas 
+                                SET status = 'ativo', 
+                                    data_renovacao = DATE_ADD(CURDATE(), INTERVAL 30 DAY) 
+                                WHERE gateway_subscription_id = %s
+                            """, (preapproval_id,))
+                            conn.commit()
+                    finally:
+                        conn.close()
 
-                if cliente_id and nome_plano and transaction_amount >= preco_metadata:
-                    ativar_assinatura_banco(cliente_id, nome_plano, transaction_amount)
-        except Exception as e:
-            app.logger.error("Erro no Webhook: %s", e)
+        # Quando a assinatura é pausada, cancelada ou falha por falta de limite
+        elif tipo_evento in ["subscription_preapproval", "preapproval"] and data_id:
+            sub_info = sdk.preapproval().get(data_id).get("response", {})
+            sub_status = sub_info.get("status")
 
-    # Retorna 200 rapidamente para o Mercado Pago não re-enviar o webhook
+            if sub_status in ["cancelled", "paused"]:
+                conn = get_db_connection()
+                try:
+                    with conn.cursor() as cursor:
+                        cursor.execute("""
+                            UPDATE assinaturas 
+                            SET status = 'cancelado' 
+                            WHERE gateway_subscription_id = %s
+                        """, (data_id,))
+                        conn.commit()
+                finally:
+                    conn.close()
+
+    except Exception as e:
+        app.logger.error("Erro no processamento do webhook: %s", e)
+
     return jsonify({"status": "ok"}), 200
 
+@app.route("/api/assinaturas/cancelar/<int:assinatura_id>", methods=["POST"])
+def cancelar_assinatura_cliente(assinatura_id):
+    cliente_id = session.get("cliente_id")
+    if not cliente_id:
+        return jsonify({"sucesso": False, "mensagem": "Não autenticado"}), 401
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT gateway_subscription_id FROM assinaturas WHERE id = %s AND cliente_id = %s",
+                (assinatura_id, cliente_id)
+            )
+            sub = cursor.fetchone()
+
+            if not sub:
+                return jsonify({"sucesso": False, "mensagem": "Assinatura não encontrada."}), 404
+
+            gw_id = sub.get("gateway_subscription_id")
+            # Cancela a cobrança recorrente no Mercado Pago
+            if gw_id:
+                try:
+                    sdk.preapproval().update(gw_id, {"status": "cancelled"})
+                except Exception as mp_err:
+                    app.logger.warning("Falha ao cancelar no gateway: %s", mp_err)
+
+            cursor.execute("UPDATE assinaturas SET status = 'cancelado' WHERE id = %s", (assinatura_id,))
+            conn.commit()
+
+        return jsonify({"sucesso": True, "mensagem": "Assinatura cancelada com sucesso!"}), 200
+    finally:
+        conn.close()
 
 @app.route("/api/login", methods=["POST"])
 def api_login():
@@ -1314,8 +1483,28 @@ def checkout_plano():
 
 @app.route("/planos", methods=["GET"])
 def pagina_planos():
-    return render_template("planos.html", cliente_id=session.get("cliente_id"), cliente_nome=session.get("cliente_nome"))
+    """Renderiza a página planos.html injetando a lista do banco de dados."""
+    conn = get_db_connection()
+    planos = []
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT id, nome, descricao, preco, ordem FROM planos_assinatura "
+                "WHERE ativo = 1 OR ativo IS NULL "
+                "ORDER BY ordem ASC, preco ASC"
+            )
+            planos = cursor.fetchall()
+    except Exception as e:
+        app.logger.error("Erro ao carregar pagina_planos: %s", e)
+    finally:
+        conn.close()
 
+    return render_template(
+        "planos.html",
+        planos=planos,
+        cliente_id=session.get("cliente_id"),
+        cliente_nome=session.get("cliente_nome")
+    )
 @app.route('/api/admin/planos-ativos', methods=['GET'])
 @admin_required
 def admin_planos_ativos():
@@ -1345,10 +1534,11 @@ def admin_planos_ativos():
 
 @app.route("/api/assinaturas/assinar", methods=["POST"])
 def assinar_plano():
+    """Ativa ou renova a assinatura com validade de 30 dias."""
     data = request.get_json() or {}
-    cliente_id = data.get("cliente_id")
+    cliente_id = data.get("cliente_id") or session.get("cliente_id")
     nome_plano = data.get("nome_plano")
-    preco = data.get("preco")
+    preco = data.get("preco", 0.00)
 
     if not cliente_id or not nome_plano:
         return jsonify({"sucesso": False, "mensagem": "Dados incompletos."}), 400
@@ -1360,25 +1550,33 @@ def assinar_plano():
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT id FROM assinaturas WHERE cliente_id = %s AND LOWER(status) = 'ativo'", (cliente_id,))
-            if cursor.fetchone():
-                return jsonify({"sucesso": False, "mensagem": "Você já possui um plano ativo."}), 400
+            cursor.execute("SELECT id FROM assinaturas WHERE cliente_id = %s", (cliente_id,))
+            existente = cursor.fetchone()
 
-            cursor.execute(
-                "INSERT INTO assinaturas (cliente_id, nome_plano, preco, status, data_inicio, data_renovacao) VALUES (%s, %s, %s, 'ativo', %s, %s)",
-                (cliente_id, nome_plano, preco, data_inicio, data_renovacao)
-            )
+            if existente:
+                cursor.execute("""
+                    UPDATE assinaturas 
+                    SET nome_plano = %s, preco = %s, status = 'ativo', 
+                        data_inicio = %s, data_renovacao = %s 
+                    WHERE cliente_id = %s
+                """, (nome_plano, preco, data_inicio, data_renovacao, cliente_id))
+            else:
+                cursor.execute("""
+                    INSERT INTO assinaturas (cliente_id, nome_plano, preco, status, data_inicio, data_renovacao) 
+                    VALUES (%s, %s, %s, 'ativo', %s, %s)
+                """, (cliente_id, nome_plano, preco, data_inicio, data_renovacao))
+            
             conn.commit()
 
         return jsonify({
             "sucesso": True, 
-            "mensagem": "Assinatura realizada com sucesso!",
+            "mensagem": "Assinatura ativada com sucesso!",
             "renovacao": data_renovacao_fmt
-        })
+        }), 200
     except Exception as e:
         conn.rollback()
         app.logger.error("Erro em assinar_plano: %s", e)
-        return jsonify({"sucesso": False, "mensagem": "Erro interno. Tente novamente."}), 500
+        return jsonify({"sucesso": False, "mensagem": "Erro interno ao processar assinatura."}), 500
     finally:
         conn.close()
 

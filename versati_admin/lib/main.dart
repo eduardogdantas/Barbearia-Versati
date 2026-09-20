@@ -3215,10 +3215,6 @@ Future<void> _atualizarServicoAPI(int id, String nome, double preco, String cate
   }
 }
 
-// ==============================================================================
-// GERENCIAR PLANOS DE ASSINATURA (CATÁLOGO EXIBIDO NO SITE)
-// ==============================================================================
-
 class GerenciarPlanosScreen extends StatefulWidget {
   const GerenciarPlanosScreen({super.key});
 
@@ -3227,10 +3223,10 @@ class GerenciarPlanosScreen extends StatefulWidget {
 }
 
 class _GerenciarPlanosScreenState extends State<GerenciarPlanosScreen> {
-  final Color _bgDark = const Color(0xFF0A0A0A);
-  final Color _cardDark = const Color(0xFF161618);
+  final Color _bgDark = const Color(0xFF000000);
+  final Color _cardDark = const Color(0xFF141414);
   final Color _brandRed = const Color(0xFFE5243B);
-  final Color _textSecondary = const Color(0xFF9CA3AF);
+  final Color _textSecondary = const Color(0xFF8E8E93);
 
   final String _apiUrl = '${AppConfig.apiUrl}/admin/planos';
 
@@ -3381,14 +3377,14 @@ class _GerenciarPlanosScreenState extends State<GerenciarPlanosScreen> {
               TextField(
                 controller: nomeCtrl,
                 style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(labelText: 'Nome do Plano', labelStyle: TextStyle(color: Colors.grey)),
+                decoration: const InputDecoration(labelText: 'Nome do Plano (Ex: PLANO CORTE ILIMITADO)', labelStyle: TextStyle(color: Colors.grey)),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: descricaoCtrl,
                 maxLines: 2,
                 style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(labelText: 'Descrição (aparece no site)', labelStyle: TextStyle(color: Colors.grey)),
+                decoration: const InputDecoration(labelText: 'Descrição (Ex: Cortes ilimitados durante o mês)', labelStyle: TextStyle(color: Colors.grey)),
               ),
               const SizedBox(height: 12),
               TextField(
@@ -3402,10 +3398,7 @@ class _GerenciarPlanosScreenState extends State<GerenciarPlanosScreen> {
                 controller: ordemCtrl,
                 keyboardType: TextInputType.number,
                 style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(
-                  labelText: 'Ordem de exibição (0 = primeiro)',
-                  labelStyle: TextStyle(color: Colors.grey),
-                ),
+                decoration: const InputDecoration(labelText: 'Ordem de exibição (0 = primeiro)', labelStyle: TextStyle(color: Colors.grey)),
               ),
             ],
           ),
@@ -3423,7 +3416,7 @@ class _GerenciarPlanosScreenState extends State<GerenciarPlanosScreen> {
               if (nomeCtrl.text.trim().isNotEmpty && preco != null) {
                 Navigator.pop(ctx);
                 if (editando) {
-                  _atualizarPlanoAPI(planoExistente!['id'] as int, nomeCtrl.text.trim(), descricaoCtrl.text.trim(), preco, ordem);
+                  _atualizarPlanoAPI(planoExistente['id'] as int, nomeCtrl.text.trim(), descricaoCtrl.text.trim(), preco, ordem);
                 } else {
                   _cadastrarPlanoAPI(nomeCtrl.text.trim(), descricaoCtrl.text.trim(), preco, ordem);
                 }
@@ -3446,7 +3439,7 @@ class _GerenciarPlanosScreenState extends State<GerenciarPlanosScreen> {
         backgroundColor: _bgDark,
         elevation: 0,
         centerTitle: true,
-        title: const Text('PLANOS DE ASSINATURA', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold, letterSpacing: 1.1)),
+        title: const Text('PLANOS DE ASSINATURA', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1.1)),
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(icon: const Icon(Icons.refresh, size: 22), onPressed: _carregarPlanos),
@@ -3472,25 +3465,14 @@ class _GerenciarPlanosScreenState extends State<GerenciarPlanosScreen> {
                     itemBuilder: (context, index) {
                       final p = _planos[index];
                       final double preco = double.tryParse(p['preco'].toString()) ?? 0;
-                      final bool ativo = (p['ativo'] ?? 1).toString() == '1' || p['ativo'] == true;
 
                       return Container(
                         margin: const EdgeInsets.only(bottom: 16),
-                        padding: const EdgeInsets.all(18),
+                        padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
                           color: _cardDark,
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: ativo ? Colors.white.withOpacity(0.06) : _brandRed.withOpacity(0.3),
-                            width: 1,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.3),
-                              blurRadius: 8,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
+                          border: Border.all(color: Colors.white12, width: 1.2),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -3500,76 +3482,44 @@ class _GerenciarPlanosScreenState extends State<GerenciarPlanosScreen> {
                               children: [
                                 Expanded(
                                   child: Text(
-                                    p['nome'] ?? '',
-                                    style: TextStyle(
-                                      color: ativo ? Colors.white : Colors.white38,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16,
+                                    (p['nome'] ?? '').toString().toUpperCase(),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 17,
+                                      letterSpacing: 0.8,
                                     ),
                                   ),
                                 ),
-                                const SizedBox(width: 12),
-                                Text(
-                                  'R\$ ${preco.toStringAsFixed(2).replaceAll('.', ',')}/mês',
-                                  style: TextStyle(color: _brandRed, fontWeight: FontWeight.bold, fontSize: 15),
-                                ),
-                              ],
-                            ),
-                            if ((p['descricao'] ?? '').toString().isNotEmpty) ...[
-                              const SizedBox(height: 8),
-                              Text(
-                                p['descricao'],
-                                style: TextStyle(color: _textSecondary, fontSize: 13, height: 1.3),
-                              ),
-                            ],
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 12),
-                              child: Divider(color: Colors.white10, height: 1),
-                            ),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                if (!ativo)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: Colors.red.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: const Text('OCULTO NO SITE', style: TextStyle(color: Colors.redAccent, fontSize: 9, fontWeight: FontWeight.bold)),
-                                  )
-                                else
-                                  const SizedBox.shrink(),
                                 Row(
                                   children: [
-                                    InkWell(
-                                      onTap: () => _abrirDialogoPlano(planoExistente: p),
-                                      borderRadius: BorderRadius.circular(8),
-                                      child: Container(
-                                        padding: const EdgeInsets.all(8),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white.withOpacity(0.05),
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        child: const Icon(Icons.edit_outlined, color: Colors.orangeAccent, size: 18),
-                                      ),
+                                    IconButton(
+                                      icon: const Icon(Icons.edit_outlined, color: Colors.orangeAccent, size: 20),
+                                      onPressed: () => _abrirDialogoPlano(planoExistente: p),
+                                      tooltip: 'Editar Plano',
                                     ),
-                                    const SizedBox(width: 8),
-                                    InkWell(
-                                      onTap: () => _confirmarRemocao(p['id']),
-                                      borderRadius: BorderRadius.circular(8),
-                                      child: Container(
-                                        padding: const EdgeInsets.all(8),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white.withOpacity(0.05),
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        child: const Icon(Icons.delete_outline, color: Colors.white54, size: 18),
-                                      ),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete_outline, color: Colors.white38, size: 20),
+                                      onPressed: () => _confirmarRemocao(p['id']),
+                                      tooltip: 'Excluir Plano',
                                     ),
                                   ],
                                 ),
                               ],
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              p['descricao'] ?? '',
+                              style: TextStyle(color: _textSecondary, fontSize: 13, height: 1.3),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'R\$ ${preco.toStringAsFixed(2).replaceAll('.', ',')}/mês',
+                              style: TextStyle(
+                                color: _brandRed,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 22,
+                              ),
                             ),
                           ],
                         ),

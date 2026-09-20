@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minha Assinatura — Barbearia Versati</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #000000;
+            --bg-card: #141414;
+            --stroke: #2b2b2b;
+            --brand-red: #d81f2c;
+            --text: #f5f5f3;
+            --text-dim: #9a9a97;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Work Sans', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 20px;
+        }
+        .container { max-width: 800px; width: 100%; text-align: center; }
+        h1 { font-family: 'Anton', sans-serif; font-size: 2.5rem; text-transform: uppercase; margin-bottom: 8px; letter-spacing: 0.03em; }
+        p.subtitle { color: var(--text-dim); margin-bottom: 30px; }
+        .sub-card {
+            background: var(--bg-card);
+            border: 1px solid var(--stroke);
+            border-radius: 12px;
+            padding: 24px;
+            text-align: left;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .sub-card.ativo { border-color: rgba(34, 197, 94, 0.4); }
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            background: rgba(34, 197, 94, 0.15);
+            color: #22c55e;
+            margin-top: 8px;
+        }
+        .preco { font-family: 'Anton', sans-serif; font-size: 1.6rem; color: var(--brand-red); }
+        .btn-voltar {
+            background: transparent;
+            color: var(--text);
+            border: 1px solid var(--stroke);
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-family: 'Anton', sans-serif;
+            text-decoration: none;
+            display: inline-block;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Minha Assinatura</h1>
+        <p class="subtitle">Bem-vindo, {{ cliente_nome or 'Cliente' }}! Consulte o estado do seu plano.</p>
+
+        {% if assinaturas and assinaturas|length > 0 %}
+            {% for sub in assinaturas %}
+            <div class="sub-card {% if sub.status == 'ativo' %}ativo{% endif %}">
+                <div>
+                    <h3 style="font-family: 'Anton', sans-serif; font-size: 1.4rem;">{{ sub.nome_plano }}</h3>
+                    <p style="color: var(--text-dim); font-size: 0.95rem; margin-top: 4px;">Início: {{ sub.data_inicio }}</p>
+                    <p style="color: var(--text-dim); font-size: 0.95rem;">Próxima Renovação: <strong style="color: #fff;">{{ sub.validade }}</strong></p>
+                    <span class="badge">{{ sub.status|upper }}</span>
+                </div>
+                <div>
+                    <div class="preco">R$ {{ "%.2f"|format(sub.preco)|replace('.', ',') }}/mês</div>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div style="background: var(--bg-card); padding: 40px; border-radius: 12px; border: 1px solid var(--stroke);">
+                <p style="color: var(--text-dim);">Não possui nenhuma assinatura ativa no momento.</p>
+                <a href="/planos" class="btn-voltar" style="border-color: var(--brand-red); color: var(--brand-red);">Contratar um Plano</a>
+            </div>
+        {% endif %}
+
+        <br>
+        <a href="/" class="btn-voltar">Voltar ao Início</a>
+    </div>
+</body>
+</html>

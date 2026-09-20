@@ -179,21 +179,25 @@ def init_db():
                 ) ENGINE=InnoDB;
             ''')
 
+            # banco.py
+
             # Popular o catálogo de planos com os que já existem hoje fixos no site,
             # só na primeira vez (assim você não perde os que já tem cadastrado).
             cursor.execute("SELECT COUNT(*) AS total FROM planos_assinatura;")
             if cursor.fetchone()["total"] == 0:
                 planos_padrao = [
+                    # Descrições e Preços atualizados para bater com o site (image_0.png)
                     ("Plano Corte Ilimitado Básico", "Corte quantas vezes quiser de segunda a quarta!", 79.90, 1),
                     ("Plano Corte Ilimitado Premium", "Cortes ilimitados, qualquer dia da semana!", 99.90, 2),
-                    ("Plano Corte + Barba Ilimitado", "Cabelo + barba ilimitado durante o mês inteiro.", 149.90, 3),
+                    ("Plano Barba Ilimitado", "Faça a barba até 1 vez por semana com prioridade.", 99.90, 3), # <-- ADICIONADO PLANO FALTANTE
+                    ("Plano Corte + Barba Ilimitado", "Cabelo + barba ilimitado durante o mês inteiro.", 149.90, 4), # ORDEM AJUSTADA PARA 4
                 ]
                 for nome, descricao, preco, ordem in planos_padrao:
                     cursor.execute(
                         "INSERT INTO planos_assinatura (nome, descricao, preco, ordem) VALUES (%s, %s, %s, %s)",
                         (nome, descricao, preco, ordem)
                     )
-                print("💳 Catálogo de planos de assinatura populado com os planos padrão!")
+                print("💳 Catálogo de planos de assinatura populado com todos os 4 planos padrão!")
 
             # Migrações formais e seguras por Schema Check
             migracoes = [
