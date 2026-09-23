@@ -241,6 +241,12 @@
     </div>
 
     <script>
+        
+        function fecharModal() {
+            idAgendamentoAtual = null;
+            document.getElementById('modalCancelar').style.display = 'none';
+        }
+
         let idAgendamentoAtual = null;
 
         function abrirModal(id) {
@@ -253,6 +259,37 @@
             idAgendamentoAtual = null;
             document.getElementById('modalCancelar').style.display = 'none';
         }
+
+        // ======================================================================
+        // ATUALIZAÇÃO EM TEMPO REAL: REMOVE O AGENDAMENTO SE FOR CONCLUÍDO NO ADMIN
+        // ======================================================================
+        async function verificarStatusAgendamentos() {
+            try {
+                // Certifique-se de que sua rota no Flask para retornar os agendamentos do cliente logado é /api/cliente/agendamentos
+                const response = await fetch('/api/cliente/agendamentos');
+                if (!response.ok) return;
+                const data = await response.json();
+
+                if (data.sucesso && data.agendamentos) {
+                    // Filtra apenas os agendamentos que continuam com status ativo/confirmado
+                    const ativos = data.agendamentos.filter(ag => {
+                        const st = (ag.status || 'confirmado').toLowerCase();
+                        return st === 'confirmado' || st === 'pendente';
+                    });
+
+                    // Se a quantidade de agendamentos ativos mudou (ex: foi concluído no admin), recarrega a página para atualizar a view
+                    const cardsAtuais = document.querySelectorAll('.agendamento-card').length;
+                    if (ativos.length !== cardsAtuais) {
+                        window.location.reload();
+                    }
+                }
+            } catch (e) {
+                console.error("Erro ao sincronizar agendamentos em tempo real:", e);
+            }
+        }
+
+        // Executa a verificação a cada 4 segundos
+        setInterval(verificarStatusAgendamentos, 4000);
     </script>
 </body>
 </html>

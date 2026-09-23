@@ -623,7 +623,7 @@ def api_admin_historico():
                        IFNULL(NULLIF(a.cliente_telefone, ''), IFNULL(u.telefone, 'Não informado')) AS cliente_telefone
                 FROM agendamentos a
                 LEFT JOIN usuarios u ON a.cliente_id = u.id
-                WHERE a.data = %s AND LOWER(a.status) = 'concluido'
+                WHERE DATE(a.data) = %s AND LOWER(a.status) = 'concluido'
                 ORDER BY a.horario ASC
             """, (data_filtro,))
             historico = cursor.fetchall()
@@ -631,6 +631,8 @@ def api_admin_historico():
             for item in historico:
                 if item.get("data") and hasattr(item["data"], "strftime"):
                     item["data"] = item["data"].strftime("%Y-%m-%d")
+                else:
+                    item["data"] = str(item.get("data", ""))[:10]
 
         return jsonify({"sucesso": True, "historico": historico}), 200
     except Exception as e:
@@ -1179,23 +1181,24 @@ def api_login():
 @app.route("/api/cadastro", methods=["POST"])
 def api_cadastro():
     dados = request.get_json() or {}
-    nome = dados.get("nome")
-    email = dados.get("email")
-    senha = dados.get("senha")
+    nome = dados.get("nome", "").strip()
+    email = dados.get("email", "").strip()
+    senha = dados.get("senha", "")
+    telefone = dados.get("telefone", "").strip()
 
     if not nome or not email or not senha:
-        return jsonify({"sucesso": False, "mensagem": "Preencha todos os campos!"}), 400
+        return jsonify({"sucesso": False, "mensagem": "Preencha todos os campos obrigatórios!"}), 400
 
     senha_hash = generate_password_hash(senha)
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
             cursor.execute(
-                "INSERT INTO usuarios (nome, email, senha) VALUES (%s, %s, %s)",
-                (nome, email, senha_hash)
+                "INSERT INTO usuarios (nome, email, senha, telefone) VALUES (%s, %s, %s, %s)",
+                (nome, email, senha_hash, telefone)
             )
             conn.commit()
-        return jsonify({"sucesso": True, "mensagem": "Cadastro realizado!"}), 201
+        return jsonify({"sucesso": True, "mensagem": "Cadastro realizado com sucesso!"}), 201
     except Exception:
         return jsonify({"sucesso": False, "mensagem": "E-mail já cadastrado!"}), 400
     finally:
@@ -1298,19 +1301,22 @@ def api_admin_resetar_senha():
         conn.close()
 
 
+
 @app.route("/api/admin/dados")
 @admin_required
 def api_admin_dados():
     data_filtro = request.args.get("data", datetime.now().strftime("%Y-%m-%d"))
+    
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
+            # 1. Agendamentos gerais do dia selecionado
             cursor.execute("""
                 SELECT a.id, a.profissional, a.data, a.horario, a.servico, 
                        a.tipo_pagamento, u.nome as cliente_nome, u.email as cliente_email
                 FROM agendamentos a
                 JOIN usuarios u ON a.cliente_id = u.id
-                WHERE a.data = %s
+                WHERE DATE(a.data) = %s
                 ORDER BY a.horario ASC
             """, (data_filtro,))
             agendamentos_raw = cursor.fetchall()
@@ -1321,7 +1327,7 @@ def api_admin_dados():
                 if hasattr(data_val, "strftime"):
                     data_val = data_val.strftime("%Y-%m-%d")
                 else:
-                    data_val = str(data_val)
+                    data_val = str(data_val)[:10]
 
                 agendamentos.append({
                     "id": row["id"],
@@ -1334,23 +1340,15 @@ def api_admin_dados():
                     "cliente_email": row["cliente_email"],
                 })
 
-            cursor.execute("SELECT COUNT(*) as total FROM agendamentos WHERE DATE(data) = CURDATE()")
-            cortes_diario = cursor.fetchone()["total"]
-
-            cursor.execute("SELECT COUNT(*) as total FROM agendamentos WHERE YEARWEEK(data, 1) = YEARWEEK(CURDATE(), 1)")
-            cortes_semanal = cursor.fetchone()["total"]
-
-            cursor.execute("SELECT COUNT(*) as total FROM agendamentos WHERE MONTH(data) = MONTH(CURDATE()) AND YEAR(data) = YEAR(CURDATE())")
-            cortes_mensal = cursor.fetchone()["total"]
-
+            # 2. Cortes Finalizados filtrados estritamente pela data selecionada
             cursor.execute("""
-                SELECT a.id, a.profissional, a.horario, a.servico, a.preco, 
+                SELECT a.id, a.profissional, a.data, a.horario, a.servico, a.preco, 
                        u.nome AS cliente_nome, 
                        IFNULL(NULLIF(a.cliente_telefone, ''), IFNULL(u.telefone, 'Não informado')) AS cliente_telefone
                 FROM agendamentos a
                 LEFT JOIN usuarios u ON a.cliente_id = u.id
-                WHERE a.data = %s AND LOWER(a.status) IN ('concluido', 'finalizado')
-                ORDER BY a.horario ASC
+                WHERE DATE(a.data) = %s AND LOWER(a.status) IN ('concluido', 'finalizado')
+                ORDER BY a.id DESC
             """, (data_filtro,))
             finalizados_raw = cursor.fetchall()
 
@@ -1360,49 +1358,65 @@ def api_admin_dados():
             finalizados = []
             for f in finalizados_raw:
                 preco_servico = float(f.get("preco") or 0)
-                
                 if preco_servico <= 0:
                     nome_servico_chave = str(f.get("servico", "")).strip().lower()
                     preco_servico = precos_por_servico.get(nome_servico_chave, 0.0)
 
-                if preco_servico <= 0:
-                    preco_servico = 0.00
-
                 f["valor"] = f"R$ {preco_servico:.2f}".replace(".", ",")
                 finalizados.append(f)
 
+            # 3. Contador Diário estritamente sincronizado com a data selecionada
             cursor.execute("""
-                SELECT a.servico, a.preco, COUNT(*) AS qtd
-                FROM agendamentos a
-                WHERE LOWER(a.status) IN ('concluido', 'finalizado')
-                GROUP BY a.servico, a.preco
-            """)
-            valor_total_finalizados = 0.0
-            for row in cursor.fetchall():
-                p = float(row.get("preco") or 0)
-                if p <= 0:
-                    p = precos_por_servico.get(str(row["servico"]).strip().lower(), 0.0)
-                valor_total_finalizados += p * row["qtd"]
+                SELECT COUNT(*) as total 
+                FROM agendamentos 
+                WHERE DATE(data) = %s AND LOWER(status) IN ('concluido', 'finalizado')
+            """, (data_filtro,))
+            cortes_diario = cursor.fetchone()["total"]
 
+            cursor.execute("""
+                SELECT COUNT(*) as total 
+                FROM agendamentos 
+                WHERE YEARWEEK(data, 1) = YEARWEEK(%s, 1) AND LOWER(status) IN ('concluido', 'finalizado')
+            """, (data_filtro,))
+            cortes_semanal = cursor.fetchone()["total"]
+
+            cursor.execute("""
+                SELECT COUNT(*) as total 
+                FROM agendamentos 
+                WHERE MONTH(data) = MONTH(%s) AND YEAR(data) = YEAR(%s) AND LOWER(status) IN ('concluido', 'finalizado')
+            """, (data_filtro, data_filtro))
+            cortes_mensal = cursor.fetchone()["total"]
+
+            # 4. Valor total calculado para a data filtrada
+            valor_total_finalizados = sum(
+                float(f.get("preco") or precos_por_servico.get(str(f.get("servico")).strip().lower(), 0.0))
+                for f in finalizados_raw
+            )
+
+            # 5. Serviços mais solicitados filtrados estritamente pela data selecionada
             cursor.execute("""
                 SELECT servico, COUNT(*) AS quantidade
                 FROM agendamentos
-                WHERE LOWER(status) != 'cancelado'
+                WHERE DATE(data) = %s AND LOWER(status) IN ('concluido', 'finalizado')
                 GROUP BY servico
                 ORDER BY quantidade DESC
                 LIMIT 5
-            """)
+            """, (data_filtro,))
             servicos_raw = cursor.fetchall()
-            total_servicos = sum(s["quantidade"] for s in servicos_raw) or 1
-            servicos_mais_solicitados = [
-                {
-                    "nome": s["servico"],
-                    "quantidade": s["quantidade"],
-                    "porcentagem": round(s["quantidade"] / total_servicos, 2),
-                }
-                for s in servicos_raw
-            ]
+            total_servicos_concluidos = sum(s["quantidade"] for s in servicos_raw)
+            servicos_mais_solicitados = []
 
+            if total_servicos_concluidos > 0:
+                servicos_mais_solicitados = [
+                    {
+                        "nome": s["servico"],
+                        "quantidade": s["quantidade"],
+                        "porcentagem": round(s["quantidade"] / total_servicos_concluidos, 2),
+                    }
+                    for s in servicos_raw
+                ]
+
+            # 6. Receitas de assinaturas
             cursor.execute("""
                 SELECT COALESCE(SUM(preco), 0) AS total
                 FROM assinaturas
@@ -1514,21 +1528,55 @@ def admin_planos_ativos():
             cursor.execute("""
                 SELECT 
                     a.id, 
-                    u.nome AS cliente_nome, 
-                    u.email AS cliente_email, 
+                    COALESCE(u.nome, 'Cliente') AS cliente_nome, 
+                    COALESCE(u.email, 'Não informado') AS cliente_email, 
+                    COALESCE(u.telefone, 'Não informado') AS cliente_telefone,
+                    u.criado_em AS cliente_desde,
+                    COALESCE(a.nome_plano, 'Plano Mensal') AS nome_plano,
                     COALESCE(a.nome_plano, 'Plano Mensal') AS nome,
-                    COALESCE(a.preco, 99.90) AS preco,
-                    DATE_FORMAT(a.data_renovacao, '%d/%m/%Y') AS validade,
-                    a.status
+                    COALESCE(a.preco, 0.00) AS preco,
+                    a.data_inicio AS inicio,
+                    a.data_renovacao AS validade,
+                    a.status,
+                    a.gateway_subscription_id
                 FROM assinaturas AS a
-                JOIN usuarios AS u ON a.cliente_id = u.id
+                LEFT JOIN usuarios AS u ON a.cliente_id = u.id
                 ORDER BY a.id DESC
             """)
-            planos = cursor.fetchall()
+            planos_raw = cursor.fetchall()
+
+            planos = []
+            for p in planos_raw:
+                # Tratamento e conversão ultra-segura de datas para string
+                for campo in ["inicio", "validade", "cliente_desde"]:
+                    val = p.get(campo)
+                    if val:
+                        if hasattr(val, "strftime"):
+                            p[campo] = val.strftime("%d/%m/%Y")
+                        else:
+                            p[campo] = str(val)[:10]
+                    else:
+                        p[campo] = "--/--/----"
+
+                # Conversão segura do preço
+                try:
+                    p["preco"] = float(p.get("preco") or 0.0)
+                except Exception:
+                    p["preco"] = 0.0
+
+                # Normalização rigorosa do status
+                st = str(p.get("status") or "").strip().lower()
+                if st in ["ativo", "active", "authorized", "approved", "confirmado"]:
+                    p["status"] = "ativo"
+                else:
+                    p["status"] = "cancelado"
+
+                planos.append(p)
+
             return jsonify({'sucesso': True, 'planos': planos}), 200
     except Exception as e:
-        app.logger.error("Erro em admin_planos_ativos: %s", e)
-        return jsonify({'sucesso': False, 'planos': [], 'mensagem': 'Erro interno. Tente novamente.'}), 500
+        app.logger.error("Erro crítico em admin_planos_ativos: %s", str(e))
+        return jsonify({'sucesso': False, 'planos': [], 'mensagem': f'Erro interno: {str(e)}'}), 500
     finally:
         conn.close()
 
@@ -1634,20 +1682,28 @@ def login():
 def cadastro():
     erro = None
     if request.method == "POST":
-        nome = request.form.get("nome")
-        email = request.form.get("email")
-        senha = request.form.get("senha")
+        nome = request.form.get("nome", "").strip()
+        email = request.form.get("email", "").strip()
+        senha = request.form.get("senha", "")
+        telefone = request.form.get("telefone", "").strip()
+
+        if not nome or not email or not senha:
+            erro = "Preencha todos os campos obrigatórios."
+            return render_template("cadastro.html", erro=erro)
 
         senha_hash = generate_password_hash(senha)
         conn = get_db_connection()
         try:
             with conn.cursor() as cursor:
-                cursor.execute("INSERT INTO usuarios (nome, email, senha) VALUES (%s, %s, %s)", (nome, email, senha_hash))
+                cursor.execute(
+                    "INSERT INTO usuarios (nome, email, senha, telefone) VALUES (%s, %s, %s, %s)",
+                    (nome, email, senha_hash, telefone)
+                )
                 conn.commit()
             return redirect(url_for("login"))
         except Exception as e:
             app.logger.error("Erro no cadastro: %s", e)
-            erro = "Erro no cadastro. Tente novamente."
+            erro = "E-mail já cadastrado ou erro ao processar."
         finally:
             conn.close()
 
@@ -1725,6 +1781,24 @@ def agendar():
 
     return render_template("agendar.html", erro=erro, tem_assinatura=tem_assinatura, barbeiros=barbeiros)
 
+@app.route('/api/admin/agendamento/<int:agendamento_id>/concluir', methods=['POST'])
+@admin_required
+def concluir_agendamento(agendamento_id):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            # Atualiza o status para concluido
+            cursor.execute(
+                "UPDATE agendamentos SET status = 'concluido' WHERE id = %s",
+                (agendamento_id,)
+            )
+            conn.commit()
+            return jsonify({'sucesso': True, 'mensagem': 'Atendimento concluído com sucesso!'}), 200
+    except Exception as e:
+        app.logger.error("Erro ao concluir agendamento: %s", e)
+        return jsonify({'sucesso': False, 'mensagem': 'Erro ao atualizar status.'}), 500
+    finally:
+        conn.close()
 @app.route("/meus-agendamentos")
 def meus_agendamentos():
     if "cliente_id" not in session:
@@ -1741,7 +1815,10 @@ def meus_agendamentos():
                 SELECT id, cliente_id, barbeiro_id, profissional, data, horario, 
                        servico, tipo_pagamento, status_pagamento, status, preco 
                 FROM agendamentos 
-                WHERE cliente_id = %s AND (data > %s OR (data = %s AND horario >= %s))
+                WHERE cliente_id = %s 
+                  AND LOWER(status) != 'concluido' 
+                  AND LOWER(status) != 'cancelado'
+                  AND (data > %s OR (data = %s AND horario >= %s))
                 ORDER BY data ASC, horario ASC
                 """,
                 (cliente_id, agora.strftime("%Y-%m-%d"), agora.strftime("%Y-%m-%d"), agora.strftime("%H:%M"))
@@ -1753,6 +1830,32 @@ def meus_agendamentos():
     return render_template("meus_agendamentos.html", agendamentos=agendamentos)
 
 
+@app.route('/api/cliente/agendamentos', methods=['GET'])
+def api_cliente_agendamentos():
+    cliente_id = session.get('cliente_id')
+    if not cliente_id:
+        return jsonify({'sucesso': False, 'agendamentos': []}), 401
+    
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT id, profissional, data, horario, servico, status
+                FROM agendamentos
+                WHERE cliente_id = %s
+                ORDER BY data DESC, horario DESC
+            """, (cliente_id,))
+            agendamentos = cursor.fetchall()
+            
+            # Formata as datas para o padrão de exibição
+            for ag in agendamentos:
+                if hasattr(ag["data"], "strftime"):
+                    ag["data"] = ag["data"].strftime("%d/%m/%Y")
+                ag["horario"] = str(ag["horario"])
+
+            return jsonify({'sucesso': True, 'agendamentos': agendamentos}), 200
+    finally:
+        conn.close()
 @app.route("/api/horarios-disponiveis")
 def horarios_disponiveis():
     barbeiro_id = request.args.get("barbeiro_id", "1")
