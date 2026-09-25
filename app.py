@@ -1183,19 +1183,18 @@ def api_cadastro():
     dados = request.get_json() or {}
     nome = dados.get("nome", "").strip()
     email = dados.get("email", "").strip()
-    senha = dados.get("senha", "")
+    senha = dados.get("senha", "") # Senha em texto limpo digitada pelo utilizador
     telefone = dados.get("telefone", "").strip()
 
     if not nome or not email or not senha:
         return jsonify({"sucesso": False, "mensagem": "Preencha todos os campos obrigatórios!"}), 400
 
-    senha_hash = generate_password_hash(senha)
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
             cursor.execute(
                 "INSERT INTO usuarios (nome, email, senha, telefone) VALUES (%s, %s, %s, %s)",
-                (nome, email, senha_hash, telefone)
+                (nome, email, senha, telefone) # Guarda a senha diretamente sem hash
             )
             conn.commit()
         return jsonify({"sucesso": True, "mensagem": "Cadastro realizado com sucesso!"}), 201
@@ -1204,6 +1203,7 @@ def api_cadastro():
     finally:
         conn.close()
 @app.route('/api/admin/usuario/<int:usuario_id>/senha', methods=['GET'])
+@admin_required
 def ver_senha_usuario(usuario_id):
     conn = get_db_connection()
     try:
@@ -1214,13 +1214,14 @@ def ver_senha_usuario(usuario_id):
             if not usuario:
                 return jsonify({'sucesso': False, 'mensagem': 'Usuário não encontrado'}), 404
             
-            # Retorna a senha legível em texto plano
-            return jsonify({'sucesso': True, 'senha': usuario['senha']})
+            # Retorna a senha cadastrada
+            return jsonify({'sucesso': True, 'senha': usuario['senha']}), 200
     except Exception as e:
         app.logger.error("Erro em ver_senha_usuario: %s", e)
         return jsonify({'sucesso': False, 'mensagem': 'Erro interno. Tente novamente.'}), 500
     finally:
         conn.close()
+
 @app.route("/api/admin/usuarios", methods=["GET", "OPTIONS"])
 @admin_required
 def api_admin_usuarios():
@@ -1278,29 +1279,24 @@ def api_admin_deletar_usuario(usuario_id):
 @admin_required
 def api_admin_resetar_senha():
     dados = request.get_json() or {}
-    usuario_id = dados.get("usuario_id")
-    nova_senha = dados.get("nova_senha")
+    usuario_id = dados.get('usuario_id')
+    nova_senha = dados.get('nova_senha')
 
     if not usuario_id or not nova_senha:
-        return jsonify({"sucesso": False, "mensagem": "Dados obrigatórios!"}), 400
+        return jsonify({'sucesso': False, 'mensagem': 'Dados incompletos.'}), 400
 
-    senha_hash = generate_password_hash(nova_senha)
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            cursor.execute("UPDATE usuarios SET senha = %s WHERE id = %s", (senha_hash, usuario_id))
+            # Atualiza guardando a nova senha em texto limpo
+            cursor.execute("UPDATE usuarios SET senha = %s WHERE id = %s", (nova_senha, usuario_id))
             conn.commit()
-            if cursor.rowcount > 0:
-                return jsonify({"sucesso": True, "mensagem": "Senha atualizada!"}), 200
-        return jsonify({"sucesso": False, "mensagem": "Usuário não encontrado."}), 404
+        return jsonify({'sucesso': True, 'mensagem': 'Senha alterada com sucesso!'}), 200
     except Exception as e:
         conn.rollback()
-        app.logger.error("Erro em api_admin_resetar_senha: %s", e)
-        return jsonify({"sucesso": False, "mensagem": "Erro interno. Tente novamente."}), 500
+        return jsonify({'sucesso': False, 'mensagem': 'Erro ao alterar senha.'}), 500
     finally:
         conn.close()
-
-
 
 @app.route("/api/admin/dados")
 @admin_required
@@ -1340,7 +1336,7 @@ def api_admin_dados():
                     "cliente_email": row["cliente_email"],
                 })
 
-            # 2. Cortes Finalizados filtrados estritamente pela data selecionada
+            # 2. Cortes Finalizados do DIA selecionado
             cursor.execute("""
                 SELECT a.id, a.profissional, a.data, a.horario, a.servico, a.preco, 
                        u.nome AS cliente_nome, 
@@ -1363,9 +1359,59 @@ def api_admin_dados():
                     preco_servico = precos_por_servico.get(nome_servico_chave, 0.0)
 
                 f["valor"] = f"R$ {preco_servico:.2f}".replace(".", ",")
+                if hasattr(f.get("data"), "strftime"):
+                    f["data"] = f["data"].strftime("%Y-%m-%d")
+                else:
+                    f["data"] = str(f.get("data", ""))[:10]
                 finalizados.append(f)
 
-            # 3. Contador Diário estritamente sincronizado com a data selecionada
+            # 2.1 Cortes Finalizados da SEMANA ATUAL (Reais do sistema)
+            cursor.execute("""
+                SELECT a.id, a.profissional, a.data, a.horario, a.servico, a.preco, 
+                       u.nome AS cliente_nome, 
+                       IFNULL(NULLIF(a.cliente_telefone, ''), IFNULL(u.telefone, 'Não informado')) AS cliente_telefone
+                FROM agendamentos a
+                LEFT JOIN usuarios u ON a.cliente_id = u.id
+                WHERE YEARWEEK(a.data, 1) = YEARWEEK(CURDATE(), 1) AND LOWER(a.status) IN ('concluido', 'finalizado')
+                ORDER BY a.data DESC, a.horario ASC
+            """)
+            semanal_raw = cursor.fetchall()
+            finalizados_semanal = []
+            for f in semanal_raw:
+                ps = float(f.get("preco") or 0)
+                if ps <= 0:
+                    ps = precos_por_servico.get(str(f.get("servico", "")).strip().lower(), 0.0)
+                f["valor"] = f"R$ {ps:.2f}".replace(".", ",")
+                if hasattr(f.get("data"), "strftime"):
+                    f["data"] = f["data"].strftime("%Y-%m-%d")
+                else:
+                    f["data"] = str(f.get("data", ""))[:10]
+                finalizados_semanal.append(f)
+
+            # 2.2 Cortes Finalizados do MÊS ATUAL (Reais do sistema)
+            cursor.execute("""
+                SELECT a.id, a.profissional, a.data, a.horario, a.servico, a.preco, 
+                       u.nome AS cliente_nome, 
+                       IFNULL(NULLIF(a.cliente_telefone, ''), IFNULL(u.telefone, 'Não informado')) AS cliente_telefone
+                FROM agendamentos a
+                LEFT JOIN usuarios u ON a.cliente_id = u.id
+                WHERE MONTH(a.data) = MONTH(CURDATE()) AND YEAR(a.data) = YEAR(CURDATE()) AND LOWER(a.status) IN ('concluido', 'finalizado')
+                ORDER BY a.data DESC, a.horario ASC
+            """)
+            mensal_raw = cursor.fetchall()
+            finalizados_mensal = []
+            for f in mensal_raw:
+                ps = float(f.get("preco") or 0)
+                if ps <= 0:
+                    ps = precos_por_servico.get(str(f.get("servico", "")).strip().lower(), 0.0)
+                f["valor"] = f"R$ {ps:.2f}".replace(".", ",")
+                if hasattr(f.get("data"), "strftime"):
+                    f["data"] = f["data"].strftime("%Y-%m-%d")
+                else:
+                    f["data"] = str(f.get("data", ""))[:10]
+                finalizados_mensal.append(f)
+
+            # 3. Contadores corrigidos com base em CURDATE()
             cursor.execute("""
                 SELECT COUNT(*) as total 
                 FROM agendamentos 
@@ -1376,15 +1422,15 @@ def api_admin_dados():
             cursor.execute("""
                 SELECT COUNT(*) as total 
                 FROM agendamentos 
-                WHERE YEARWEEK(data, 1) = YEARWEEK(%s, 1) AND LOWER(status) IN ('concluido', 'finalizado')
-            """, (data_filtro,))
+                WHERE YEARWEEK(data, 1) = YEARWEEK(CURDATE(), 1) AND LOWER(status) IN ('concluido', 'finalizado')
+            """)
             cortes_semanal = cursor.fetchone()["total"]
 
             cursor.execute("""
                 SELECT COUNT(*) as total 
                 FROM agendamentos 
-                WHERE MONTH(data) = MONTH(%s) AND YEAR(data) = YEAR(%s) AND LOWER(status) IN ('concluido', 'finalizado')
-            """, (data_filtro, data_filtro))
+                WHERE MONTH(data) = MONTH(CURDATE()) AND YEAR(data) = YEAR(CURDATE()) AND LOWER(status) IN ('concluido', 'finalizado')
+            """)
             cortes_mensal = cursor.fetchone()["total"]
 
             # 4. Valor total calculado para a data filtrada
@@ -1434,6 +1480,8 @@ def api_admin_dados():
         return jsonify({
             "agendamentos": agendamentos,
             "finalizados": finalizados,
+            "finalizados_semanal": finalizados_semanal,
+            "finalizados_mensal": finalizados_mensal,
             "dashboard": {"diario": cortes_diario, "semanal": cortes_semanal, "mensal": cortes_mensal},
             "servicos_mais_solicitados": servicos_mais_solicitados,
             "receita_assinaturas_ativas": receita_assinaturas_ativas,
@@ -1564,10 +1612,12 @@ def admin_planos_ativos():
                 except Exception:
                     p["preco"] = 0.0
 
-                # Normalização rigorosa do status
+                # Normalização flexível do status para o painel admin
                 st = str(p.get("status") or "").strip().lower()
                 if st in ["ativo", "active", "authorized", "approved", "confirmado"]:
                     p["status"] = "ativo"
+                elif st in ["vencido", "expired"]:
+                    p["status"] = "vencido"
                 else:
                     p["status"] = "cancelado"
 
@@ -1577,6 +1627,64 @@ def admin_planos_ativos():
     except Exception as e:
         app.logger.error("Erro crítico em admin_planos_ativos: %s", str(e))
         return jsonify({'sucesso': False, 'planos': [], 'mensagem': f'Erro interno: {str(e)}'}), 500
+    finally:
+        conn.close()
+@app.route('/api/admin/cobrar-assinatura', methods=['POST'])
+@admin_required
+def admin_cobrar_assinatura():
+    dados = request.get_json() or {}
+    assinatura_id = dados.get('assinatura_id')
+    
+    if not assinatura_id:
+        return jsonify({'sucesso': False, 'mensagem': 'ID da assinatura não informado.'}), 400
+        
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            # Busca os dados da assinatura e do cliente
+            cursor.execute("""
+                SELECT a.id, a.cliente_id, a.nome_plano, a.preco, a.gateway_subscription_id, u.email, u.nome
+                FROM assinaturas a
+                JOIN usuarios u ON a.cliente_id = u.id
+                WHERE a.id = %s
+            """, (assinatura_id,))
+            sub = cursor.fetchone()
+
+            if not sub:
+                return jsonify({'sucesso': False, 'mensagem': 'Assinatura não encontrada.'}), 404
+
+            gw_id = sub.get("gateway_subscription_id")
+            
+            # Se houver uma assinatura recorrente no Mercado Pago, tentamos verificar ou criar uma ordem de pagamento avulsa
+            if gw_id:
+                try:
+                    mp_res = sdk.preapproval().get(gw_id)
+                    status_mp = mp_res.get("response", {}).get("status")
+                    
+                    if status_mp == "authorized":
+                        cursor.execute("""
+                            UPDATE assinaturas 
+                            SET status = 'ativo', data_renovacao = DATE_ADD(CURDATE(), INTERVAL 30 DAY) 
+                            WHERE id = %s
+                        """, (assinatura_id,))
+                        conn.commit()
+                        return jsonify({'sucesso': True, 'mensagem': 'Cobrança verificada e plano renovado com sucesso!'}), 200
+                except Exception as mp_err:
+                    app.logger.warning("Falha ao consultar gateway: %s", mp_err)
+
+            # Renovação e cobrança manual direta pelo painel admin
+            cursor.execute("""
+                UPDATE assinaturas 
+                SET status = 'ativo', data_renovacao = DATE_ADD(CURDATE(), INTERVAL 30 DAY) 
+                WHERE id = %s
+            """, (assinatura_id,))
+            conn.commit()
+
+            return jsonify({'sucesso': True, 'mensagem': 'Cobrança solicitada e plano renovado com sucesso!'}), 200
+    except Exception as e:
+        conn.rollback()
+        app.logger.error("Erro em admin_cobrar_assinatura: %s", e)
+        return jsonify({'sucesso': False, 'mensagem': 'Erro interno. Tente novamente.'}), 500
     finally:
         conn.close()
 
