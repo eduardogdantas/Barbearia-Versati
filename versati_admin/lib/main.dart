@@ -4542,57 +4542,1021 @@ class _GerenciarBarbeirosScreenState extends State<GerenciarBarbeirosScreen> {
                 )
               : ListView.builder(
                   padding: const EdgeInsets.all(16),
-                  itemCount: _barbeiros.length,
+  itemCount: _barbeiros.length,
                   itemBuilder: (context, index) {
                     final b = _barbeiros[index];
+                    final String fotoUrl = (b['foto_url'] ?? '').toString();
+                    final bool exibirAgenda = (b['exibir_agenda'] == null) ? true : (b['exibir_agenda'] == 1 || b['exibir_agenda'] == true);
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
                         color: _cardDark,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: Colors.white10),
                       ),
-                      child: Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 24,
-                            backgroundColor: _brandRed.withOpacity(0.2),
-                            child: Icon(Icons.content_cut, color: _brandRed, size: 24),
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: () async {
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => EditarBarbeiroScreen(barbeiro: b)),
+                            );
+                            _carregarBarbeiros();
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Row(
                               children: [
-                                Text(
-                                  b['nome'] ?? '',
-                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                                CircleAvatar(
+                                  radius: 24,
+                                  backgroundColor: _brandRed.withOpacity(0.2),
+                                  backgroundImage: fotoUrl.startsWith('data:image')
+                                      ? MemoryImage(base64Decode(fotoUrl.split(',').last))
+                                      : null,
+                                  child: fotoUrl.startsWith('data:image')
+                                      ? null
+                                      : Icon(Icons.content_cut, color: _brandRed, size: 24),
                                 ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  b['cargo'] ?? '',
-                                  style: TextStyle(color: _brandRed, fontSize: 12, fontWeight: FontWeight.bold),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        b['nome'] ?? '',
+                                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        b['cargo'] ?? '',
+                                        style: TextStyle(color: _brandRed, fontSize: 12, fontWeight: FontWeight.bold),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        b['especialidade'] ?? '',
+                                        style: TextStyle(color: _textSecondary, fontSize: 12),
+                                      ),
+                                      if (!exibirAgenda) ...[
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'Não exibido na agenda',
+                                          style: TextStyle(color: Colors.white38, fontSize: 11, fontStyle: FontStyle.italic),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
                                 ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  b['especialidade'] ?? '',
-                                  style: TextStyle(color: _textSecondary, fontSize: 12),
+                                const Icon(Icons.chevron_right, color: Colors.white24),
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline, color: Colors.white38),
+                                  onPressed: () {
+                                    _deletarBarbeiroAPI(b['id']);
+                                  },
                                 ),
                               ],
                             ),
                           ),
-                          IconButton(
-                            icon: const Icon(Icons.delete_outline, color: Colors.white38),
-                            onPressed: () {
-                              _deletarBarbeiroAPI(b['id']);
-                            },
-                          ),
-                        ],
+                        ),
                       ),
                     );
                   },
                 ),
+    );
+  }
+}
+
+// ==============================================================================
+// TELA DE EDIÇÃO DO COLABORADOR (Dados gerais / Comissões / Horários)
+// Inspirada no fluxo de gestão de equipe usado por apps de barbearia do mercado.
+// ==============================================================================
+
+class EditarBarbeiroScreen extends StatefulWidget {
+  final Map<String, dynamic> barbeiro;
+
+  const EditarBarbeiroScreen({super.key, required this.barbeiro});
+
+  @override
+  State<EditarBarbeiroScreen> createState() => _EditarBarbeiroScreenState();
+}
+
+class _EditarBarbeiroScreenState extends State<EditarBarbeiroScreen> with SingleTickerProviderStateMixin {
+  final Color _cardDark = const Color(0xFF121212);
+  final Color _brandRed = const Color(0xFFE5243B);
+  final Color _textSecondary = const Color(0xFF8E8E93);
+  final Color _brandGreen = const Color(0xFF34C759);
+
+  late TabController _tabController;
+
+  late TextEditingController _nomeCtrl;
+  late TextEditingController _apelidoCtrl;
+  late TextEditingController _emailCtrl;
+  late TextEditingController _telefoneCtrl;
+  late TextEditingController _cargoCtrl;
+  late TextEditingController _especialidadeCtrl;
+
+  String _nivelAcesso = 'Atendente';
+  bool _exibirAgenda = true;
+  bool _verTodasAgendas = false;
+  String _fotoBase64 = '';
+  bool _salvandoDados = false;
+
+  final List<String> _niveisAcesso = const ['Atendente', 'Barbeiro', 'Gerente', 'Administrador'];
+
+  String get _apiUrlBarbeiro => '${AppConfig.apiUrl}/admin/barbeiros/${widget.barbeiro['id']}';
+  String get _apiUrlComissoes => '${AppConfig.apiUrl}/admin/barbeiro/${widget.barbeiro['id']}/comissoes';
+  String get _apiUrlHorarios => '${AppConfig.apiUrl}/admin/barbeiro/${widget.barbeiro['id']}/horarios';
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+
+    final b = widget.barbeiro;
+    _nomeCtrl = TextEditingController(text: b['nome'] ?? '');
+    _apelidoCtrl = TextEditingController(text: b['apelido'] ?? '');
+    _emailCtrl = TextEditingController(text: b['email'] ?? '');
+    _telefoneCtrl = TextEditingController(text: b['telefone'] ?? '');
+    _cargoCtrl = TextEditingController(text: b['cargo'] ?? 'Barbeiro');
+    _especialidadeCtrl = TextEditingController(text: b['especialidade'] ?? 'Cortes em Geral');
+    _nivelAcesso = _niveisAcesso.contains(b['nivel_acesso']) ? b['nivel_acesso'] : 'Atendente';
+    _exibirAgenda = (b['exibir_agenda'] == null) ? true : (b['exibir_agenda'] == 1 || b['exibir_agenda'] == true);
+    _verTodasAgendas = (b['ver_todas_agendas'] == 1 || b['ver_todas_agendas'] == true);
+    _fotoBase64 = (b['foto_url'] ?? '').toString();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _nomeCtrl.dispose();
+    _apelidoCtrl.dispose();
+    _emailCtrl.dispose();
+    _telefoneCtrl.dispose();
+    _cargoCtrl.dispose();
+    _especialidadeCtrl.dispose();
+    super.dispose();
+  }
+
+  void _mostrarSnack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  Future<void> _selecionarImagem(ImageSource source) async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: source, imageQuality: 70);
+    if (pickedFile != null) {
+      final bytes = await pickedFile.readAsBytes();
+      setState(() {
+        _fotoBase64 = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+      });
+    }
+  }
+
+  void _abrirSeletorImagem() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: _cardDark,
+      builder: (_) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt, color: Colors.white),
+              title: const Text('Tirar Foto com a Câmera', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                _selecionarImagem(ImageSource.camera);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library, color: Colors.white),
+              title: const Text('Escolher da Galeria', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                _selecionarImagem(ImageSource.gallery);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _salvarDadosGerais() async {
+    final nome = _nomeCtrl.text.trim();
+    if (nome.isEmpty) {
+      _mostrarSnack('O nome é obrigatório.');
+      return;
+    }
+    setState(() => _salvandoDados = true);
+    try {
+      final response = await http.put(
+        Uri.parse(_apiUrlBarbeiro),
+        headers: AppConfig.adminHeaders,
+        body: jsonEncode({
+          'nome': nome,
+          'apelido': _apelidoCtrl.text.trim(),
+          'email': _emailCtrl.text.trim(),
+          'telefone': _telefoneCtrl.text.trim(),
+          'cargo': _cargoCtrl.text.trim().isEmpty ? 'Barbeiro' : _cargoCtrl.text.trim(),
+          'especialidade': _especialidadeCtrl.text.trim().isEmpty ? 'Cortes em Geral' : _especialidadeCtrl.text.trim(),
+          'nivel_acesso': _nivelAcesso,
+          'foto_url': _fotoBase64,
+          'exibir_agenda': _exibirAgenda,
+          'ver_todas_agendas': _verTodasAgendas,
+        }),
+      );
+      if (!mounted) return;
+      final resData = jsonDecode(response.body);
+      if (response.statusCode == 200 && resData['sucesso'] == true) {
+        _mostrarSnack('✅ Dados salvos com sucesso!');
+      } else {
+        _mostrarSnack('❌ ${resData['mensagem'] ?? 'Erro ao salvar.'}');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _mostrarSnack('Erro de conexão com o servidor.');
+    } finally {
+      if (mounted) setState(() => _salvandoDados = false);
+    }
+  }
+
+  Future<void> _excluirColaborador() async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _cardDark,
+        title: const Text('Remover colaborador?', style: TextStyle(color: Colors.white)),
+        content: Text('Essa ação não pode ser desfeita.', style: TextStyle(color: _textSecondary)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar', style: TextStyle(color: Colors.grey))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Remover', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (confirmar != true) return;
+    try {
+      final response = await http.delete(Uri.parse(_apiUrlBarbeiro), headers: AppConfig.adminHeaders);
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        Navigator.pop(context);
+      } else {
+        _mostrarSnack('Erro ao remover colaborador.');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _mostrarSnack('Erro de conexão com o servidor.');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: _cardDark,
+        elevation: 0,
+        title: Text(
+          widget.barbeiro['nome'] ?? 'Colaborador',
+          style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+        bottom: TabBar(
+          controller: _tabController,
+          indicatorColor: _brandRed,
+          labelColor: Colors.white,
+          unselectedLabelColor: _textSecondary,
+          tabs: const [
+            Tab(text: 'Dados gerais'),
+            Tab(text: 'Comissões'),
+            Tab(text: 'Horários'),
+          ],
+        ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _buildAbaDadosGerais(),
+          _AbaComissoes(
+            apiUrl: _apiUrlComissoes,
+            cardDark: _cardDark,
+            brandRed: _brandRed,
+            brandGreen: _brandGreen,
+            textSecondary: _textSecondary,
+          ),
+          _AbaHorarios(
+            apiUrl: _apiUrlHorarios,
+            cardDark: _cardDark,
+            brandRed: _brandRed,
+            brandGreen: _brandGreen,
+            textSecondary: _textSecondary,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAbaDadosGerais() {
+    Uint8List? imagemBytes = _fotoBase64.startsWith('data:image') ? base64Decode(_fotoBase64.split(',').last) : null;
+
+    InputDecoration _dec(String label) => InputDecoration(
+          labelText: label,
+          labelStyle: TextStyle(color: _textSecondary),
+          enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.white10), borderRadius: BorderRadius.circular(8)),
+          focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: _brandRed), borderRadius: BorderRadius.circular(8)),
+        );
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Column(
+              children: [
+                GestureDetector(
+                  onTap: _abrirSeletorImagem,
+                  child: CircleAvatar(
+                    radius: 44,
+                    backgroundColor: _brandRed.withOpacity(0.2),
+                    backgroundImage: imagemBytes != null ? MemoryImage(imagemBytes) : null,
+                    child: imagemBytes == null ? Icon(Icons.person, color: _brandRed, size: 44) : null,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  onPressed: _abrirSeletorImagem,
+                  icon: const Icon(Icons.upload, size: 18, color: Colors.white70),
+                  label: const Text('Selecionar imagem', style: TextStyle(color: Colors.white70)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(controller: _nomeCtrl, style: const TextStyle(color: Colors.white), decoration: _dec('Nome')),
+          const SizedBox(height: 12),
+          TextField(controller: _apelidoCtrl, style: const TextStyle(color: Colors.white), decoration: _dec('Apelido (exibido na agenda, opcional)')),
+          const SizedBox(height: 12),
+          TextField(controller: _emailCtrl, style: const TextStyle(color: Colors.white), keyboardType: TextInputType.emailAddress, decoration: _dec('Email')),
+          const SizedBox(height: 12),
+          TextField(controller: _telefoneCtrl, style: const TextStyle(color: Colors.white), keyboardType: TextInputType.phone, decoration: _dec('Telefone / WhatsApp')),
+          const SizedBox(height: 12),
+          TextField(controller: _cargoCtrl, style: const TextStyle(color: Colors.white), decoration: _dec('Cargo / Título (Ex: Barbeiro Master)')),
+          const SizedBox(height: 12),
+          TextField(controller: _especialidadeCtrl, style: const TextStyle(color: Colors.white), decoration: _dec('Especialidade (Ex: Cortes e Barba)')),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(color: _cardDark, borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.white10)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('ACESSO', style: TextStyle(color: _textSecondary, fontSize: 12, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 6),
+                DropdownButtonFormField<String>(
+                  value: _nivelAcesso,
+                  dropdownColor: _cardDark,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(border: InputBorder.none),
+                  items: _niveisAcesso
+                      .map((nivel) => DropdownMenuItem(value: nivel, child: Text(nivel)))
+                      .toList(),
+                  onChanged: (v) => setState(() => _nivelAcesso = v ?? 'Atendente'),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+            decoration: BoxDecoration(color: _cardDark, borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.white10)),
+            child: Column(
+              children: [
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  activeColor: _brandGreen,
+                  title: const Text('Exibir na Agenda', style: TextStyle(color: Colors.white)),
+                  value: _exibirAgenda,
+                  onChanged: (v) => setState(() => _exibirAgenda = v),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  activeColor: _brandGreen,
+                  title: const Text('Ver Todas as Agendas', style: TextStyle(color: Colors.white)),
+                  value: _verTodasAgendas,
+                  onChanged: (v) => setState(() => _verTodasAgendas = v),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: _brandRed, padding: const EdgeInsets.symmetric(vertical: 14)),
+              onPressed: _salvandoDados ? null : _salvarDadosGerais,
+              child: _salvandoDados
+                  ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Text('Salvar', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.red), padding: const EdgeInsets.symmetric(vertical: 14)),
+              onPressed: _excluirColaborador,
+              child: const Text('Excluir colaborador', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ==============================================================================
+// ABA "COMISSÕES" CORRIGIDA COM AUTENTICAÇÃO E TRATAMENTO DE ERROS
+// ==============================================================================
+
+class _AbaComissoes extends StatefulWidget {
+  final String apiUrl;
+  final Color cardDark;
+  final Color brandRed;
+  final Color brandGreen;
+  final Color textSecondary;
+
+  const _AbaComissoes({
+    required this.apiUrl,
+    required this.cardDark,
+    required this.brandRed,
+    required this.brandGreen,
+    required this.textSecondary,
+  });
+
+  @override
+  State<_AbaComissoes> createState() => _AbaComissoesState();
+}
+
+class _AbaComissoesState extends State<_AbaComissoes> with SingleTickerProviderStateMixin {
+  late TabController _subTabController;
+  bool _isLoading = true;
+  bool _salvando = false;
+  String _busca = '';
+
+  List<Map<String, dynamic>> _servicos = [];
+  List<Map<String, dynamic>> _produtos = [];
+
+  final Map<int, TextEditingController> _duracaoCtrls = {};
+  final Map<int, TextEditingController> _precoCtrls = {};
+  final Map<int, TextEditingController> _comissaoServicoCtrls = {};
+  final Map<int, TextEditingController> _comissaoProdutoCtrls = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _subTabController = TabController(length: 2, vsync: this);
+    _carregar();
+  }
+
+  @override
+  void dispose() {
+    _subTabController.dispose();
+    for (final c in _duracaoCtrls.values) c.dispose();
+    for (final c in _precoCtrls.values) c.dispose();
+    for (final c in _comissaoServicoCtrls.values) c.dispose();
+    for (final c in _comissaoProdutoCtrls.values) c.dispose();
+    super.dispose();
+  }
+
+  void _mostrarSnack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  Future<void> _carregar() async {
+    setState(() => _isLoading = true);
+    try {
+      final response = await http.get(
+        Uri.parse(widget.apiUrl),
+        headers: AppConfig.adminHeaders,
+      );
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        _servicos = List<Map<String, dynamic>>.from(data['servicos'] ?? []);
+        _produtos = List<Map<String, dynamic>>.from(data['produtos'] ?? []);
+
+        for (final s in _servicos) {
+          final id = s['id'] as int;
+          _duracaoCtrls[id] = TextEditingController(text: '${s['duracao_minutos'] ?? 30}');
+          _precoCtrls[id] = TextEditingController(
+            text: (double.tryParse('${s['preco_personalizado']}') ?? 0).toStringAsFixed(2),
+          );
+          _comissaoServicoCtrls[id] = TextEditingController(
+            text: (double.tryParse('${s['comissao_percentual']}') ?? 40).toStringAsFixed(2),
+          );
+        }
+        for (final p in _produtos) {
+          final id = p['id'] as int;
+          _comissaoProdutoCtrls[id] = TextEditingController(
+            text: (double.tryParse('${p['comissao_percentual'] ?? 20}') ?? 20).toStringAsFixed(2),
+          );
+        }
+        setState(() => _isLoading = false);
+      } else {
+        setState(() => _isLoading = false);
+        _mostrarSnack('Erro ao carregar comissões.');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      _mostrarSnack('Erro de conexão com o servidor.');
+    }
+  }
+
+  void _ativarTodosServicos() {
+    setState(() {
+      for (final s in _servicos) {
+        s['realiza'] = 1;
+      }
+    });
+  }
+
+  Future<void> _salvarAlteracoes() async {
+    setState(() => _salvando = true);
+    try {
+      for (final s in _servicos) {
+        final id = s['id'] as int;
+        await http.post(
+          Uri.parse(widget.apiUrl),
+          headers: AppConfig.adminHeaders,
+          body: jsonEncode({
+            'tipo': 'servico',
+            'item_id': id,
+            'realiza': (s['realiza'] == 1 || s['realiza'] == true),
+            'duracao_minutos': int.tryParse(_duracaoCtrls[id]?.text ?? '') ?? 30,
+            'preco_personalizado': double.tryParse((_precoCtrls[id]?.text ?? '0').replaceAll(',', '.')) ?? 0,
+            'comissao_percentual': double.tryParse((_comissaoServicoCtrls[id]?.text ?? '0').replaceAll(',', '.')) ?? 40,
+          }),
+        );
+      }
+      for (final p in _produtos) {
+        final id = p['id'] as int;
+        await http.post(
+          Uri.parse(widget.apiUrl),
+          headers: AppConfig.adminHeaders,
+          body: jsonEncode({
+            'tipo': 'produto',
+            'item_id': id,
+            'comissao_percentual': double.tryParse((_comissaoProdutoCtrls[id]?.text ?? '0').replaceAll(',', '.')) ?? 20,
+          }),
+        );
+      }
+      if (!mounted) return;
+      _mostrarSnack('✅ Comissões atualizadas com sucesso!');
+    } catch (e) {
+      if (!mounted) return;
+      _mostrarSnack('❌ Erro ao salvar alterações.');
+    } finally {
+      if (mounted) setState(() => _salvando = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Center(child: CircularProgressIndicator(color: widget.brandRed));
+    }
+
+    final servicosFiltrados = _busca.trim().isEmpty
+        ? _servicos
+        : _servicos.where((s) => (s['nome'] ?? '').toString().toLowerCase().contains(_busca.toLowerCase())).toList();
+
+    return Column(
+      children: [
+        TabBar(
+          controller: _subTabController,
+          indicatorColor: widget.brandRed,
+          labelColor: Colors.white,
+          unselectedLabelColor: widget.textSecondary,
+          tabs: [
+            Tab(text: 'Serviços (${_servicos.length})'),
+            Tab(text: 'Produtos (${_produtos.length})'),
+          ],
+        ),
+        Expanded(
+          child: TabBarView(
+            controller: _subTabController,
+            children: [
+              Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: TextField(
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: 'Buscar serviço...',
+                        hintStyle: TextStyle(color: widget.textSecondary),
+                        prefixIcon: Icon(Icons.search, color: widget.textSecondary),
+                        filled: true,
+                        fillColor: widget.cardDark,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                      ),
+                      onChanged: (v) => setState(() => _busca = v),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(side: BorderSide(color: widget.brandGreen)),
+                        onPressed: _ativarTodosServicos,
+                        child: Text('Ativar todos os serviços', style: TextStyle(color: widget.brandGreen)),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: ListView.builder(
+                      padding: const EdgeInsets.all(12),
+                      itemCount: servicosFiltrados.length,
+                      itemBuilder: (context, index) {
+                        final s = servicosFiltrados[index];
+                        final id = s['id'] as int;
+                        final bool realiza = (s['realiza'] == 1 || s['realiza'] == true);
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: widget.cardDark,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.white10),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('${s['nome'] ?? ''}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+                              Text(
+                                'Padrão do serviço: R\$ ${(double.tryParse('${s['preco_padrao']}') ?? 0).toStringAsFixed(2)}',
+                                style: TextStyle(color: widget.textSecondary, fontSize: 12),
+                              ),
+                              const SizedBox(height: 10),
+                              Row(
+                                children: [
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text('REALIZA', style: TextStyle(color: widget.textSecondary, fontSize: 11)),
+                                      Switch(
+                                        value: realiza,
+                                        activeColor: widget.brandGreen,
+                                        onChanged: (v) => setState(() => s['realiza'] = v ? 1 : 0),
+                                      ),
+                                    ],
+                                  ),
+                                  const Spacer(),
+                                  SizedBox(
+                                    width: 90,
+                                    child: TextField(
+                                      controller: _duracaoCtrls[id],
+                                      keyboardType: TextInputType.number,
+                                      style: const TextStyle(color: Colors.white),
+                                      textAlign: TextAlign.center,
+                                      decoration: InputDecoration(
+                                        labelText: 'Duração (min)',
+                                        labelStyle: TextStyle(color: widget.textSecondary, fontSize: 10),
+                                        border: const OutlineInputBorder(),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: TextField(
+                                      controller: _precoCtrls[id],
+                                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                      style: const TextStyle(color: Colors.white),
+                                      decoration: InputDecoration(
+                                        labelText: 'Preço (R\$)',
+                                        labelStyle: TextStyle(color: widget.textSecondary, fontSize: 11),
+                                        border: const OutlineInputBorder(),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: TextField(
+                                      controller: _comissaoServicoCtrls[id],
+                                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                      style: const TextStyle(color: Colors.white),
+                                      decoration: InputDecoration(
+                                        labelText: '% Comissão',
+                                        labelStyle: TextStyle(color: widget.textSecondary, fontSize: 11),
+                                        border: const OutlineInputBorder(),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              ListView.builder(
+                padding: const EdgeInsets.all(12),
+                itemCount: _produtos.length,
+                itemBuilder: (context, index) {
+                  final p = _produtos[index];
+                  final id = p['id'] as int;
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: widget.cardDark,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.white10),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('${p['nome'] ?? ''}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                              Text(
+                                'R\$ ${(double.tryParse('${p['preco']}') ?? 0).toStringAsFixed(2)}',
+                                style: TextStyle(color: widget.brandGreen, fontSize: 13),
+                              ),
+                            ],
+                          ),
+                        ),
+                        SizedBox(
+                          width: 90,
+                          child: TextField(
+                            controller: _comissaoProdutoCtrls[id],
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            style: const TextStyle(color: Colors.white),
+                            textAlign: TextAlign.center,
+                            decoration: InputDecoration(
+                              labelText: '% Comissão',
+                              labelStyle: TextStyle(color: widget.textSecondary, fontSize: 10),
+                              border: const OutlineInputBorder(),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.all(12),
+          child: SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(backgroundColor: widget.brandRed, padding: const EdgeInsets.symmetric(vertical: 14)),
+              onPressed: _salvando ? null : _salvarAlteracoes,
+              icon: _salvando
+                  ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.check, color: Colors.white),
+              label: const Text('Salvar alterações', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ==============================================================================
+// ABA "HORÁRIOS" CORRIGIDA COM AUTENTICAÇÃO
+// ==============================================================================
+
+class _AbaHorarios extends StatefulWidget {
+  final String apiUrl;
+  final Color cardDark;
+  final Color brandRed;
+  final Color brandGreen;
+  final Color textSecondary;
+
+  const _AbaHorarios({
+    required this.apiUrl,
+    required this.cardDark,
+    required this.brandRed,
+    required this.brandGreen,
+    required this.textSecondary,
+  });
+
+  @override
+  State<_AbaHorarios> createState() => _AbaHorariosState();
+}
+
+class _AbaHorariosState extends State<_AbaHorarios> {
+  bool _isLoading = true;
+  bool _salvando = false;
+  List<Map<String, dynamic>> _dias = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _carregar();
+  }
+
+  void _mostrarSnack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  Future<void> _carregar() async {
+    setState(() => _isLoading = true);
+    try {
+      final response = await http.get(
+        Uri.parse(widget.apiUrl),
+        headers: AppConfig.adminHeaders,
+      );
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        setState(() {
+          _dias = List<Map<String, dynamic>>.from(data['horarios'] ?? []);
+          _isLoading = false;
+        });
+      } else {
+        setState(() => _isLoading = false);
+        _mostrarSnack('Erro ao carregar horários.');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      _mostrarSnack('Erro de conexão com o servidor.');
+    }
+  }
+
+  Future<void> _selecionarHora(Map<String, dynamic> dia, String campo) async {
+    final partes = (dia[campo] ?? '09:00').toString().split(':');
+    final horaAtual = TimeOfDay(
+      hour: int.tryParse(partes[0]) ?? 9,
+      minute: partes.length > 1 ? (int.tryParse(partes[1]) ?? 0) : 0,
+    );
+    final novaHora = await showTimePicker(context: context, initialTime: horaAtual);
+    if (novaHora != null) {
+      setState(() {
+        dia[campo] = '${novaHora.hour.toString().padLeft(2, '0')}:${novaHora.minute.toString().padLeft(2, '0')}';
+      });
+    }
+  }
+
+  Future<void> _salvar() async {
+    setState(() => _salvando = true);
+    try {
+      final response = await http.post(
+        Uri.parse(widget.apiUrl),
+        headers: AppConfig.adminHeaders,
+        body: jsonEncode({
+          'dias': _dias
+              .map((d) => {
+                    'dia_semana': d['dia_semana'],
+                    'trabalha': (d['trabalha'] == 1 || d['trabalha'] == true),
+                    'hora_inicio': d['hora_inicio'],
+                    'hora_fim': d['hora_fim'],
+                    'almoco_inicio': d['almoco_inicio'],
+                    'almoco_fim': d['almoco_fim'],
+                  })
+              .toList(),
+        }),
+      );
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        _mostrarSnack('✅ Horários salvos com sucesso!');
+      } else {
+        _mostrarSnack('❌ Erro ao salvar horários.');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _mostrarSnack('Erro de conexão com o servidor.');
+    } finally {
+      if (mounted) setState(() => _salvando = false);
+    }
+  }
+
+  Widget _campoHora(Map<String, dynamic> dia, String campo, String label) {
+    return GestureDetector(
+      onTap: () => _selecionarHora(dia, campo),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+        decoration: BoxDecoration(
+          color: Colors.black26,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: Colors.white10),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: TextStyle(color: widget.textSecondary, fontSize: 10)),
+            Text('${dia[campo] ?? '--:--'}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Center(child: CircularProgressIndicator(color: widget.brandRed));
+    }
+    return Column(
+      children: [
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.all(12),
+            itemCount: _dias.length,
+            itemBuilder: (context, index) {
+              final dia = _dias[index];
+              final bool trabalha = (dia['trabalha'] == 1 || dia['trabalha'] == true);
+              return Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: widget.cardDark,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.white10),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text('${dia['nome_dia'] ?? ''}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: trabalha ? widget.brandGreen.withOpacity(0.15) : Colors.white10,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            trabalha ? 'Expediente' : 'Folga',
+                            style: TextStyle(color: trabalha ? widget.brandGreen : widget.textSecondary, fontSize: 11, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        Switch(
+                          value: trabalha,
+                          activeColor: widget.brandGreen,
+                          onChanged: (v) => setState(() => dia['trabalha'] = v ? 1 : 0),
+                        ),
+                      ],
+                    ),
+                    if (trabalha) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(child: _campoHora(dia, 'hora_inicio', 'JORNADA — INÍCIO')),
+                          const SizedBox(width: 8),
+                          Expanded(child: _campoHora(dia, 'hora_fim', 'JORNADA — FIM')),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(child: _campoHora(dia, 'almoco_inicio', 'ALMOÇO — INÍCIO')),
+                          const SizedBox(width: 8),
+                          Expanded(child: _campoHora(dia, 'almoco_fim', 'ALMOÇO — FIM')),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.all(12),
+          child: SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: widget.brandRed, padding: const EdgeInsets.symmetric(vertical: 14)),
+              onPressed: _salvando ? null : _salvar,
+              child: _salvando
+                  ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Text('Salvar', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

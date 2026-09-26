@@ -31,9 +31,13 @@ ADMIN_API_TOKEN = os.environ.get("ADMIN_API_TOKEN")
 def admin_required(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
-        # Permite que os pedidos de pré-voo do CORS passem sem exigir o token
+        # Permite imediatamente qualquer requisição OPTIONS de pré-voo do navegador
         if request.method == "OPTIONS":
-            return "", 200
+            response = jsonify({"sucesso": True})
+            response.headers.add("Access-Control-Allow-Origin", "*")
+            response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
+            response.headers.add("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
+            return response, 200
             
         auth_header = request.headers.get("Authorization", "")
         token = auth_header.replace("Bearer ", "").strip()
@@ -59,7 +63,16 @@ app.json_provider_class = CustomJSONProvider
 app.secret_key = os.environ.get(
     "FLASK_SECRET_KEY", "barbearia_versati_secret_key_prod"
 )
-CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True, allow_headers=["Content-Type", "Authorization", "X-Requested-With"], methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+CORS(
+    app,
+    resources={r"/api/*": {"origins": "*"}},
+    supports_credentials=True,
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+    expose_headers=["Content-Type", "Authorization"],
+    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    max_age=86400,
+)
+
 
 @app.route('/api/admin/servicos/<int:servico_id>', methods=['PUT', 'DELETE'])
 @admin_required
@@ -95,7 +108,152 @@ def editar_ou_remover_servico(servico_id):
         return jsonify({'sucesso': False, 'mensagem': 'Erro interno. Tente novamente.'}), 500
     finally:
         conn.close()
+@app.route('/api/admin/barbeiro/<int:barbeiro_id>/comissoes', methods=['GET', 'POST', 'OPTIONS'])
+@admin_required
+def gerenciar_comissoes_barbeiro(barbeiro_id):
+    if request.method == 'OPTIONS':
+        response = jsonify({'sucesso': True})
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        response.headers.add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+        return response, 200
 
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            if request.method == 'POST':
+                dados = request.get_json() or {}
+                tipo = dados.get('tipo') 
+                item_id = dados.get('item_id') 
+                
+                if tipo == 'servico':
+                    realiza = 1 if dados.get('realiza', True) else 0
+                    preco = dados.get('preco_personalizado', 0.00)
+                    duracao = dados.get('duracao_minutos', 30)
+                    comissao = dados.get('comissao_percentual', 40.00)
+
+                    cursor.execute("""
+                        INSERT INTO barbeiro_servicos (barbeiro_id, servico_id, realiza, preco_personalizado, duracao_minutos, comissao_percentual)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                        ON DUPLICATE KEY UPDATE 
+                            realiza = VALUES(realiza),
+                            preco_personalizado = VALUES(preco_personalizado),
+                            duracao_minutos = VALUES(duracao_minutos),
+                            comissao_percentual = VALUES(comissao_percentual)
+                    """, (barbeiro_id, item_id, realiza, preco, duracao, comissao))
+                
+                elif tipo == 'produto':
+                    comissao = dados.get('comissao_percentual', 20.00)
+                    cursor.execute("""
+                        INSERT INTO barbeiro_produtos (barbeiro_id, produto_id, comissao_percentual)
+                        VALUES (%s, %s, %s)
+                        ON DUPLICATE KEY UPDATE comissao_percentual = VALUES(comissao_percentual)
+                    """, (barbeiro_id, item_id, comissao))
+
+                conn.commit()
+                return jsonify({'sucesso': True, 'mensagem': 'Comissão atualizada com sucesso!'}), 200
+
+            cursor.execute("SELECT id, nome, preco, categoria FROM servicos")
+            servicos_base = cursor.fetchall()
+
+            cursor.execute("SELECT bs.*, s.nome, s.preco AS preco_padrao FROM servicos s LEFT JOIN barbeiro_servicos bs ON s.id = bs.servico_id AND bs.barbeiro_id = %s", (barbeiro_id,))
+            servicos_config = {item['servico_id']: item for item in cursor.fetchall() if item['servico_id']}
+
+            servicos_resultado = []
+            for s in servicos_base:
+                cfg = servicos_config.get(s['id'], {})
+                servicos_resultado.append({
+                    'id': s['id'],
+                    'nome': s['nome'],
+                    'preco_padrao': float(s['preco']),
+                    'realiza': int(cfg.get('realiza', 1)),
+                    'preco_personalizado': float(cfg.get('preco_personalizado') if cfg.get('preco_personalizado') is not None else s['preco']),
+                    'duracao_minutos': int(cfg.get('duracao_minutos', 30)),
+                    'comissao_percentual': float(cfg.get('comissao_percentual', 40.00))
+                })
+
+            cursor.execute("SELECT p.id, p.nome, p.preco, bp.comissao_percentual FROM produtos p LEFT JOIN barbeiro_produtos bp ON p.id = bp.produto_id AND bp.barbeiro_id = %s", (barbeiro_id,))
+            produtos_resultado = cursor.fetchall()
+
+            return jsonify({
+                'sucesso': True,
+                'servicos': servicos_resultado,
+                'produtos': produtos_resultado
+            }), 200
+
+    except Exception as e:
+        app.logger.error("Erro em gerenciar_comissoes_barbeiro: %s", e)
+        return jsonify({'sucesso': False, 'mensagem': 'Erro interno.'}), 500
+    finally:
+        conn.close()
+
+
+@app.route('/api/admin/barbeiro/<int:barbeiro_id>/horarios', methods=['GET', 'POST', 'OPTIONS'])
+@admin_required
+def gerenciar_horarios_barbeiro(barbeiro_id):
+    if request.method == 'OPTIONS':
+        response = jsonify({'sucesso': True})
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        response.headers.add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+        return response, 200
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            if request.method == 'POST':
+                dados = request.get_json() or {}
+                dias = dados.get('dias', [])
+                for d in dias:
+                    cursor.execute("""
+                        INSERT INTO barbeiro_horarios
+                            (barbeiro_id, dia_semana, trabalha, hora_inicio, hora_fim, almoco_inicio, almoco_fim)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        ON DUPLICATE KEY UPDATE
+                            trabalha = VALUES(trabalha),
+                            hora_inicio = VALUES(hora_inicio),
+                            hora_fim = VALUES(hora_fim),
+                            almoco_inicio = VALUES(almoco_inicio),
+                            almoco_fim = VALUES(almoco_fim)
+                    """, (
+                        barbeiro_id,
+                        d.get('dia_semana'),
+                        1 if d.get('trabalha', True) else 0,
+                        d.get('hora_inicio', '09:00'),
+                        d.get('hora_fim', '19:00'),
+                        d.get('almoco_inicio', '12:00'),
+                        d.get('almoco_fim', '13:00'),
+                    ))
+                conn.commit()
+                return jsonify({'sucesso': True, 'mensagem': 'Horários atualizados com sucesso!'}), 200
+
+            cursor.execute(
+                "SELECT dia_semana, trabalha, hora_inicio, hora_fim, almoco_inicio, almoco_fim "
+                "FROM barbeiro_horarios WHERE barbeiro_id = %s",
+                (barbeiro_id,)
+            )
+            existentes = {row['dia_semana']: row for row in cursor.fetchall()}
+
+            dias_semana_nomes = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado']
+            resultado = []
+            for i, nome_dia in enumerate(dias_semana_nomes):
+                cfg = existentes.get(i)
+                trabalha_padrao = 0 if i == 0 else 1
+                resultado.append({
+                    'dia_semana': i,
+                    'nome_dia': nome_dia,
+                    'trabalha': int(cfg['trabalha']) if cfg else trabalha_padrao,
+                    'hora_inicio': cfg['hora_inicio'] if cfg else '09:00',
+                    'hora_fim': cfg['hora_fim'] if cfg else '19:00',
+                    'almoco_inicio': cfg['almoco_inicio'] if cfg else '12:00',
+                    'almoco_fim': cfg['almoco_fim'] if cfg else '13:00',
+                })
+            return jsonify({'sucesso': True, 'horarios': resultado}), 200
+    except Exception as e:
+        app.logger.error("Erro em gerenciar_horarios_barbeiro: %s", e)
+        return jsonify({'sucesso': False, 'mensagem': 'Erro interno.'}), 500
+    finally:
+        conn.close()
 @app.route("/api/pagamento/cartao", methods=["POST"])
 def processar_pagamento_cartao():
     dados = request.get_json() or {}
@@ -728,9 +886,11 @@ def ativar_assinatura_banco(cliente_id, nome_plano, preco=0.0):
         conn.close()
 
 
-@app.route('/api/admin/barbeiros', methods=['GET', 'POST'])
+@app.route('/api/admin/barbeiros', methods=['GET', 'POST', 'OPTIONS'])
 @admin_required
 def gerenciar_barbeiros():
+    if request.method == 'OPTIONS':
+        return "", 200
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
@@ -740,18 +900,31 @@ def gerenciar_barbeiros():
                 cargo = data.get('cargo', 'Barbeiro')
                 especialidade = data.get('especialidade', 'Cortes em Geral')
                 telefone = data.get('telefone', '')
+                apelido = data.get('apelido', '')
+                email = data.get('email', '')
+                nivel_acesso = data.get('nivel_acesso', 'Atendente')
+                foto_url = (data.get('foto_url') or '').strip()
+                exibir_agenda = 1 if data.get('exibir_agenda', True) else 0
+                ver_todas_agendas = 1 if data.get('ver_todas_agendas', False) else 0
 
                 if not nome:
                     return jsonify({'sucesso': False, 'mensagem': 'Nome obrigatório'}), 400
 
                 cursor.execute(
-                    "INSERT INTO barbeiros (nome, cargo, especialidade, telefone) VALUES (%s, %s, %s, %s)",
-                    (nome, cargo, especialidade, telefone)
+                    """INSERT INTO barbeiros
+                       (nome, cargo, especialidade, telefone, apelido, email, nivel_acesso, foto_url, exibir_agenda, ver_todas_agendas)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    (nome, cargo, especialidade, telefone, apelido, email, nivel_acesso, foto_url, exibir_agenda, ver_todas_agendas)
                 )
+                novo_id = cursor.lastrowid
                 conn.commit()
-                return jsonify({'sucesso': True, 'mensagem': 'Barbeiro cadastrado!'}), 201
+                return jsonify({'sucesso': True, 'mensagem': 'Barbeiro cadastrado!', 'id': novo_id}), 201
 
-            cursor.execute("SELECT id, nome, cargo, especialidade, telefone FROM barbeiros ORDER BY id ASC")
+            cursor.execute("""
+                SELECT id, nome, apelido, cargo, especialidade, nivel_acesso, telefone, email,
+                       IFNULL(foto_url, '') AS foto_url, exibir_agenda, ver_todas_agendas
+                FROM barbeiros ORDER BY id ASC
+            """)
             barbeiros = cursor.fetchall()
             return jsonify({'sucesso': True, 'barbeiros': barbeiros}), 200
     except Exception as e:
@@ -765,9 +938,53 @@ def barbearia_compativel(lista):
     return lista
 
 
-@app.route('/api/admin/barbeiros/<int:barbeiro_id>', methods=['DELETE'])
+@app.route('/api/admin/barbeiros/<int:barbeiro_id>', methods=['PUT', 'OPTIONS'])
+@admin_required
+def editar_barbeiro(barbeiro_id):
+    if request.method == 'OPTIONS':
+        return "", 200
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            data = request.get_json() or {}
+            nome = data.get('nome')
+            if not nome:
+                return jsonify({'sucesso': False, 'mensagem': 'Nome obrigatório'}), 400
+
+            cargo = data.get('cargo', 'Barbeiro')
+            especialidade = data.get('especialidade', 'Cortes em Geral')
+            telefone = data.get('telefone', '')
+            apelido = data.get('apelido', '')
+            email = data.get('email', '')
+            nivel_acesso = data.get('nivel_acesso', 'Atendente')
+            foto_url = (data.get('foto_url') or '').strip()
+            exibir_agenda = 1 if data.get('exibir_agenda', True) else 0
+            ver_todas_agendas = 1 if data.get('ver_todas_agendas', False) else 0
+
+            cursor.execute(
+                """UPDATE barbeiros SET
+                       nome = %s, cargo = %s, especialidade = %s, telefone = %s,
+                       apelido = %s, email = %s, nivel_acesso = %s, foto_url = %s,
+                       exibir_agenda = %s, ver_todas_agendas = %s
+                   WHERE id = %s""",
+                (nome, cargo, especialidade, telefone, apelido, email, nivel_acesso,
+                 foto_url, exibir_agenda, ver_todas_agendas, barbeiro_id)
+            )
+            conn.commit()
+            return jsonify({'sucesso': True, 'mensagem': 'Colaborador atualizado com sucesso!'}), 200
+    except Exception as e:
+        conn.rollback()
+        app.logger.error("Erro em editar_barbeiro: %s", e)
+        return jsonify({'sucesso': False, 'mensagem': 'Erro interno. Tente novamente.'}), 500
+    finally:
+        conn.close()
+
+
+@app.route('/api/admin/barbeiros/<int:barbeiro_id>', methods=['DELETE', 'OPTIONS'])
 @admin_required
 def deletar_barbeiro(barbeiro_id):
+    if request.method == 'OPTIONS':
+        return "", 200
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
@@ -780,6 +997,11 @@ def deletar_barbeiro(barbeiro_id):
         return jsonify({'sucesso': False, 'mensagem': 'Erro interno. Tente novamente.'}), 500
     finally:
         conn.close()
+
+
+DIAS_SEMANA_NOMES = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado']
+
+
 
 
 @app.route('/api/produtos', methods=['GET'])

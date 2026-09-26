@@ -68,10 +68,15 @@ def init_db():
                 CREATE TABLE IF NOT EXISTS barbeiros (
                     id INT AUTO_INCREMENT PRIMARY KEY,
                     nome VARCHAR(100) NOT NULL,
+                    apelido VARCHAR(100),
+                    email VARCHAR(150),
                     cargo VARCHAR(50) DEFAULT 'Barbeiro',
+                    nivel_acesso VARCHAR(50) DEFAULT 'Atendente',
                     especialidade VARCHAR(100) DEFAULT 'Cortes em Geral',
                     telefone VARCHAR(20),
-                    foto_url VARCHAR(255),
+                    foto_url MEDIUMTEXT,
+                    exibir_agenda TINYINT(1) DEFAULT 1,
+                    ver_todas_agendas TINYINT(1) DEFAULT 0,
                     criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 ) ENGINE=InnoDB;
             ''')
@@ -199,6 +204,52 @@ def init_db():
                     )
                 print("💳 Catálogo de planos de assinatura populado com todos os 4 planos padrão!")
 
+            # TABELA: Comissões e Serviços por Barbeiro
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS barbeiro_servicos (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    barbeiro_id INT NOT NULL,
+                    servico_id INT NOT NULL,
+                    realiza TINYINT(1) DEFAULT 1,
+                    preco_personalizado DECIMAL(10, 2) DEFAULT 0.00,
+                    duracao_minutos INT DEFAULT 30,
+                    comissao_percentual DECIMAL(5, 2) DEFAULT 40.00,
+                    FOREIGN KEY (barbeiro_id) REFERENCES barbeiros(id) ON DELETE CASCADE,
+                    FOREIGN KEY (servico_id) REFERENCES servicos(id) ON DELETE CASCADE,
+                    UNIQUE KEY uniq_barbeiro_servico (barbeiro_id, servico_id)
+                ) ENGINE=InnoDB;
+            ''')
+
+            # TABELA: Comissões de Produtos por Barbeiro
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS barbeiro_produtos (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    barbeiro_id INT NOT NULL,
+                    produto_id INT NOT NULL,
+                    comissao_percentual DECIMAL(5, 2) DEFAULT 20.00,
+                    FOREIGN KEY (barbeiro_id) REFERENCES barbeiros(id) ON DELETE CASCADE,
+                    FOREIGN KEY (produto_id) REFERENCES produtos(id) ON DELETE CASCADE,
+                    UNIQUE KEY uniq_barbeiro_produto (barbeiro_id, produto_id)
+                ) ENGINE=InnoDB;
+            ''')
+
+            # TABELA: Horários de Trabalho por Barbeiro (jornada, almoço e folgas por dia da semana)
+            # dia_semana: 0=Domingo, 1=Segunda, 2=Terça, 3=Quarta, 4=Quinta, 5=Sexta, 6=Sábado
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS barbeiro_horarios (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    barbeiro_id INT NOT NULL,
+                    dia_semana TINYINT NOT NULL,
+                    trabalha TINYINT(1) DEFAULT 1,
+                    hora_inicio VARCHAR(5) DEFAULT '09:00',
+                    hora_fim VARCHAR(5) DEFAULT '19:00',
+                    almoco_inicio VARCHAR(5) DEFAULT '12:00',
+                    almoco_fim VARCHAR(5) DEFAULT '13:00',
+                    FOREIGN KEY (barbeiro_id) REFERENCES barbeiros(id) ON DELETE CASCADE,
+                    UNIQUE KEY uniq_barbeiro_dia (barbeiro_id, dia_semana)
+                ) ENGINE=InnoDB;
+            ''')
+
             # Migrações formais e seguras por Schema Check
             migracoes = [
                 ("agendamentos", "barbeiro_id", "ALTER TABLE agendamentos ADD COLUMN barbeiro_id INT NOT NULL DEFAULT 1;"),
@@ -212,6 +263,11 @@ def init_db():
                 ("servicos", "categoria", "ALTER TABLE servicos ADD COLUMN categoria VARCHAR(80) NOT NULL DEFAULT 'Geral';"),
                 ("servicos", "foto", "ALTER TABLE servicos ADD COLUMN foto MEDIUMTEXT;"),
                 ("produtos", "foto", "ALTER TABLE produtos ADD COLUMN foto MEDIUMTEXT;"),
+                ("barbeiros", "apelido", "ALTER TABLE barbeiros ADD COLUMN apelido VARCHAR(100);"),
+                ("barbeiros", "email", "ALTER TABLE barbeiros ADD COLUMN email VARCHAR(150);"),
+                ("barbeiros", "nivel_acesso", "ALTER TABLE barbeiros ADD COLUMN nivel_acesso VARCHAR(50) DEFAULT 'Atendente';"),
+                ("barbeiros", "exibir_agenda", "ALTER TABLE barbeiros ADD COLUMN exibir_agenda TINYINT(1) DEFAULT 1;"),
+                ("barbeiros", "ver_todas_agendas", "ALTER TABLE barbeiros ADD COLUMN ver_todas_agendas TINYINT(1) DEFAULT 0;"),
             ]
 
             for tabela, coluna, comando_sql in migracoes:
@@ -226,6 +282,10 @@ def init_db():
                     cursor.execute(f"ALTER TABLE {tabela} MODIFY COLUMN foto MEDIUMTEXT;")
                 except Exception:
                     pass
+            try:
+                cursor.execute("ALTER TABLE barbeiros MODIFY COLUMN foto_url MEDIUMTEXT;")
+            except Exception:
+                pass
 
             # Popular dados iniciais de barbeiros
             barbeiros_padrao = [
