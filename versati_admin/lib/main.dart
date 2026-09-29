@@ -883,6 +883,10 @@ class _FinanceiroViewState extends State<FinanceiroView> {
   Timer? _timerTempoReal;
   DateTime? _dataFiltro;
 
+  // Filtro por barbeiro (null = todos)
+  List<dynamic> _barbeirosFiltro = [];
+  String? _barbeiroSelecionado;
+
   final String _apiUrlBase = '${AppConfig.apiUrl}/admin/dados';
 
   String get _apiUrl {
@@ -894,6 +898,7 @@ class _FinanceiroViewState extends State<FinanceiroView> {
   @override
   void initState() {
     super.initState();
+    _carregarBarbeirosFiltro();
     carregarDados(manual: true);
     _timerTempoReal = Timer.periodic(const Duration(seconds: 5), (_) {
       carregarDados(manual: false);
@@ -930,6 +935,129 @@ class _FinanceiroViewState extends State<FinanceiroView> {
     } catch (e) {
       if (mounted && manual) setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _carregarBarbeirosFiltro() async {
+    try {
+      final resp = await http.get(
+        Uri.parse('${AppConfig.apiUrl}/admin/barbeiros'),
+        headers: AppConfig.adminHeaders,
+      );
+      if (resp.statusCode == 200 && mounted) {
+        setState(() => _barbeirosFiltro = jsonDecode(resp.body)['barbeiros'] ?? []);
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar barbeiros do filtro: $e');
+    }
+  }
+
+  bool _pertenceAoBarbeiro(dynamic item) {
+    if (_barbeiroSelecionado == null) return true;
+    final alvo = _barbeiroSelecionado!.trim().toLowerCase();
+    final prof = (item['profissional'] ?? '').toString().trim().toLowerCase();
+    return prof == alvo || prof.contains(alvo);
+  }
+
+  List<dynamic> _filtrar(List<dynamic> lista) =>
+      _barbeiroSelecionado == null ? lista : lista.where(_pertenceAoBarbeiro).toList();
+
+  double _valorDoItem(dynamic item) {
+    final txt = (item['valor'] ?? '0')
+        .toString()
+        .replaceAll('R\$', '')
+        .replaceAll(' ', '')
+        .replaceAll('.', '')
+        .replaceAll(',', '.');
+    return double.tryParse(txt) ?? 0;
+  }
+
+  List<dynamic> get _finalizadosVisiveis => _filtrar(_finalizados);
+  List<dynamic> get _semanalVisiveis => _filtrar(_finalizadosSemanal);
+  List<dynamic> get _mensalVisiveis => _filtrar(_finalizadosMensal);
+
+  double get _valorTotalExibido => _barbeiroSelecionado == null
+      ? _valorTotalFinalizados
+      : _finalizadosVisiveis.fold<double>(0, (soma, i) => soma + _valorDoItem(i));
+
+  int _contagem(String chave, List<dynamic> visiveis) =>
+      _barbeiroSelecionado == null ? (int.tryParse('${_dashboardData[chave] ?? 0}') ?? 0) : visiveis.length;
+
+  List<dynamic> get _servicosExibidos {
+    if (_barbeiroSelecionado == null) return _servicosMaisSolicitados;
+    final Map<String, int> cont = {};
+    for (final i in _finalizadosVisiveis) {
+      final nome = (i['servico'] ?? 'Corte').toString();
+      cont[nome] = (cont[nome] ?? 0) + 1;
+    }
+    final total = cont.values.fold<int>(0, (a, b) => a + b);
+    final ordenado = cont.entries.toList()..sort((x, y) => y.value.compareTo(x.value));
+    return ordenado
+        .take(5)
+        .map((e) => {
+              'nome': e.key,
+              'quantidade': e.value,
+              'porcentagem': total == 0 ? 0.0 : double.parse((e.value / total).toStringAsFixed(2)),
+            })
+        .toList();
+  }
+
+  Widget _chipFiltroBarbeiro({required bool ativo, required Widget leading, required String label, required VoidCallback onTap}) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(24),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: ativo ? _brandRed.withOpacity(0.2) : _cardDark,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: ativo ? _brandRed : Colors.white10),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              leading,
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(color: ativo ? Colors.white : _textSecondary, fontSize: 12, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFiltroBarbeiros() {
+    if (_barbeirosFiltro.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: SizedBox(
+        height: 42,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          children: [
+            _chipFiltroBarbeiro(
+              ativo: _barbeiroSelecionado == null,
+              leading: Icon(Icons.groups, size: 18, color: _barbeiroSelecionado == null ? _brandRed : _textSecondary),
+              label: 'Todos',
+              onTap: () => setState(() => _barbeiroSelecionado = null),
+            ),
+            ..._barbeirosFiltro.map((b) {
+              final nome = (b['nome'] ?? '').toString();
+              return _chipFiltroBarbeiro(
+                ativo: _barbeiroSelecionado == nome,
+                leading: _buildAvatarBarbeiro(b['foto_url'], radius: 12),
+                label: nome,
+                onTap: () => setState(() => _barbeiroSelecionado = nome),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> selecionarDataFiltro() async {
@@ -1116,6 +1244,8 @@ class _FinanceiroViewState extends State<FinanceiroView> {
                     const SizedBox(height: 16),
                   ],
 
+                  _buildFiltroBarbeiros(),
+
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
@@ -1139,7 +1269,7 @@ class _FinanceiroViewState extends State<FinanceiroView> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'R\$ ${_valorTotalFinalizados.toStringAsFixed(2).replaceAll('.', ',')}',
+                          'R\$ ${_valorTotalExibido.toStringAsFixed(2).replaceAll('.', ',')}',
                           style: const TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.bold),
                         ),
                       ],
@@ -1149,16 +1279,16 @@ class _FinanceiroViewState extends State<FinanceiroView> {
 
                   Row(
                     children: [
-                      _buildClickableMetricCard('HOJE', '${_dashboardData['diario'] ?? 0} Cortes', Icons.today, () {
-                        _mostrarListaPeriodo('Atendimentos de Hoje', _finalizados);
+                      _buildClickableMetricCard('HOJE', '${_contagem('diario', _finalizadosVisiveis)} Cortes', Icons.today, () {
+                        _mostrarListaPeriodo('Atendimentos de Hoje', _finalizadosVisiveis);
                       }),
                       const SizedBox(width: 8),
-                      _buildClickableMetricCard('SEMANA', '${_dashboardData['semanal'] ?? 0} Cortes', Icons.calendar_view_week, () {
-                        _mostrarListaPeriodo('Atendimentos da Semana', _finalizadosSemanal);
+                      _buildClickableMetricCard('SEMANA', '${_contagem('semanal', _semanalVisiveis)} Cortes', Icons.calendar_view_week, () {
+                        _mostrarListaPeriodo('Atendimentos da Semana', _semanalVisiveis);
                       }),
                       const SizedBox(width: 8),
-                      _buildClickableMetricCard('MÊS', '${_dashboardData['mensal'] ?? 0} Cortes', Icons.calendar_month, () {
-                        _mostrarListaPeriodo('Atendimentos do Mês', _finalizadosMensal);
+                      _buildClickableMetricCard('MÊS', '${_contagem('mensal', _mensalVisiveis)} Cortes', Icons.calendar_month, () {
+                        _mostrarListaPeriodo('Atendimentos do Mês', _mensalVisiveis);
                       }),
                     ],
                   ),
@@ -1169,12 +1299,12 @@ class _FinanceiroViewState extends State<FinanceiroView> {
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(color: _cardDark, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white10)),
-                    child: _servicosMaisSolicitados.isEmpty
+                    child: _servicosExibidos.isEmpty
                         ? Padding(
                             padding: const EdgeInsets.symmetric(vertical: 8),
                             child: Text('Nenhum agendamento registrado ainda.', style: TextStyle(color: _textSecondary, fontSize: 12)),
                           )
-                        : Column(children: _servicosMaisSolicitados.map((c) => _buildCorteMaisVendidoRow(c)).toList()),
+                        : Column(children: _servicosExibidos.map((c) => _buildCorteMaisVendidoRow(Map<String, dynamic>.from(c))).toList()),
                   ),
                   const SizedBox(height: 24),
 
@@ -1186,14 +1316,14 @@ class _FinanceiroViewState extends State<FinanceiroView> {
                         style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
                       ),
                       Text(
-                        '${_finalizados.length} concluídos',
+                        '${_finalizadosVisiveis.length} concluídos',
                         style: const TextStyle(color: Colors.greenAccent, fontSize: 12),
                       ),
                     ],
                   ),
                   const SizedBox(height: 12),
 
-                  if (_finalizados.isEmpty)
+                  if (_finalizadosVisiveis.isEmpty)
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(20),
@@ -1212,9 +1342,9 @@ class _FinanceiroViewState extends State<FinanceiroView> {
                     ListView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
-                      itemCount: _finalizados.length,
+                      itemCount: _finalizadosVisiveis.length,
                       itemBuilder: (context, index) {
-                        final item = _finalizados[index];
+                        final item = _finalizadosVisiveis[index];
                         return _buildFinalizadoTile(item);
                       },
                     ),
@@ -3975,9 +4105,18 @@ class _AgendaDetalhesScreenState extends State<AgendaDetalhesScreen> {
       appBar: AppBar(
         backgroundColor: _cardColor,
         elevation: 0,
-        title: Text(
-          'Agenda Detalhada - $nomeBarbeiro',
-          style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+        title: Row(
+          children: [
+            _buildAvatarBarbeiro(widget.barbeiro['foto_url'], radius: 16),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                nomeBarbeiro,
+                style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
         ),
       ),
       body: Padding(
@@ -4110,6 +4249,26 @@ class _AgendaDetalhesScreenState extends State<AgendaDetalhesScreen> {
   }
 }
 
+// Avatar reutilizável do barbeiro (foto base64/URL ou ícone padrão)
+Widget _buildAvatarBarbeiro(dynamic foto, {double radius = 24}) {
+  final String f = (foto ?? '').toString().trim();
+  ImageProvider? img;
+  if (f.startsWith('data:image')) {
+    try {
+      img = MemoryImage(base64Decode(f.split(',').last));
+    } catch (_) {}
+  } else if (f.startsWith('http')) {
+    img = NetworkImage(f);
+  }
+  const Color vermelhoMarca = Color(0xFFE5243B);
+  return CircleAvatar(
+    radius: radius,
+    backgroundColor: vermelhoMarca.withOpacity(0.2),
+    backgroundImage: img,
+    child: img == null ? const Icon(Icons.content_cut, color: vermelhoMarca) : null,
+  );
+}
+
 class AgendaProfissionalScreen extends StatefulWidget {
   const AgendaProfissionalScreen({super.key});
 
@@ -4148,9 +4307,37 @@ class _AgendaProfissionalScreenState extends State<AgendaProfissionalScreen> {
       );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
+        final List<dynamic> equipe = data['equipe_agenda'] ?? [];
+
+        // Garante a foto: busca na mesma rota usada pela tela "Equipe de Barbeiros"
+        try {
+          final respFotos = await http.get(
+            Uri.parse('$_baseUrl/admin/barbeiros'),
+            headers: AppConfig.adminHeaders,
+          );
+          if (respFotos.statusCode == 200) {
+            final listaB = jsonDecode(respFotos.body)['barbeiros'] ?? [];
+            final Map<String, String> fotos = {};
+            for (final b in listaB) {
+              fotos[b['id'].toString()] = (b['foto_url'] ?? '').toString();
+            }
+            for (final item in equipe) {
+              final barb = item['barbeiro'];
+              if (barb is Map) {
+                final atual = (barb['foto_url'] ?? '').toString();
+                if (atual.isEmpty) {
+                  barb['foto_url'] = fotos[barb['id'].toString()] ?? '';
+                }
+              }
+            }
+          }
+        } catch (e) {
+          debugPrint('Erro ao buscar fotos dos barbeiros: $e');
+        }
+
         if (mounted) {
           setState(() {
-            _barbeirosComAgenda = data['equipe_agenda'] ?? [];
+            _barbeirosComAgenda = equipe;
             _isLoading = false;
           });
         }
@@ -4242,7 +4429,9 @@ class _AgendaProfissionalScreenState extends State<AgendaProfissionalScreen> {
                       final barbeiro = itemGrupo['barbeiro'];
                       final List<dynamic> agendamentos = itemGrupo['agendamentos'];
 
-                      return InkWell(
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 20),
+                        child: InkWell(
                         onTap: () {
                           Navigator.push(
                             context,
@@ -4257,7 +4446,6 @@ class _AgendaProfissionalScreenState extends State<AgendaProfissionalScreen> {
                         },
                         borderRadius: BorderRadius.circular(16),
                         child: Container(
-                          margin: const EdgeInsets.only(bottom: 20),
                           decoration: BoxDecoration(
                             color: _cardColor,
                             borderRadius: BorderRadius.circular(16),
@@ -4267,11 +4455,7 @@ class _AgendaProfissionalScreenState extends State<AgendaProfissionalScreen> {
                             padding: const EdgeInsets.all(16),
                             child: Row(
                               children: [
-                                CircleAvatar(
-                                  radius: 24,
-                                  backgroundColor: _brandRed.withOpacity(0.2),
-                                  child: Icon(Icons.content_cut, color: _brandRed, size: 22),
-                                ),
+                                _buildAvatarBarbeiro(barbeiro['foto_url'], radius: 24),
                                 const SizedBox(width: 14),
                                 Expanded(
                                   child: Column(
@@ -4300,9 +4484,16 @@ class _AgendaProfissionalScreenState extends State<AgendaProfissionalScreen> {
                                     color: Colors.white.withOpacity(0.05),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
-                                  child: Text(
-                                    '${agendamentos.length} agendamento(s)',
-                                    style: TextStyle(color: _textSecondary, fontSize: 11, fontWeight: FontWeight.bold),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.event, color: _textSecondary, size: 14),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        '${agendamentos.length}',
+                                        style: TextStyle(color: _textSecondary, fontSize: 12, fontWeight: FontWeight.bold),
+                                      ),
+                                    ],
                                   ),
                                 ),
                                 const SizedBox(width: 4),
@@ -4311,6 +4502,7 @@ class _AgendaProfissionalScreenState extends State<AgendaProfissionalScreen> {
                             ),
                           ),
                         ),
+                      ),
                       );
                     },
                   ),
@@ -4929,24 +5121,31 @@ class _EditarBarbeiroScreenState extends State<EditarBarbeiroScreen> with Single
           const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-            decoration: BoxDecoration(color: _cardDark, borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.white10)),
-            child: Column(
-              children: [
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  activeColor: _brandGreen,
-                  title: const Text('Exibir na Agenda', style: TextStyle(color: Colors.white)),
-                  value: _exibirAgenda,
-                  onChanged: (v) => setState(() => _exibirAgenda = v),
-                ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  activeColor: _brandGreen,
-                  title: const Text('Ver Todas as Agendas', style: TextStyle(color: Colors.white)),
-                  value: _verTodasAgendas,
-                  onChanged: (v) => setState(() => _verTodasAgendas = v),
-                ),
-              ],
+            decoration: BoxDecoration(
+              color: _cardDark,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.white10),
+            ),
+            child: Material( // <--- ENVOLVA NUM WIDGET MATERIAL PARA CORRIGIR O ERRO
+              color: Colors.transparent,
+              child: Column(
+                children: [
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    activeThumbColor: _brandGreen,
+                    title: const Text('Exibir na Agenda', style: TextStyle(color: Colors.white)),
+                    value: _exibirAgenda,
+                    onChanged: (v) => setState(() => _exibirAgenda = v),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    activeThumbColor: _brandGreen,
+                    title: const Text('Ver Todas as Agendas', style: TextStyle(color: Colors.white)),
+                    value: _verTodasAgendas,
+                    onChanged: (v) => setState(() => _verTodasAgendas = v),
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 20),

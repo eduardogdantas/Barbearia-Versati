@@ -59,6 +59,25 @@ class CustomJSONProvider(DefaultJSONProvider):
 
 
 app = Flask(__name__)
+
+
+def garantir_coluna_concluido_em():
+    """Cria a coluna agendamentos.concluido_em (data/hora em que o atendimento foi concluído)."""
+    try:
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("SHOW COLUMNS FROM agendamentos LIKE 'concluido_em'")
+                if not cursor.fetchone():
+                    cursor.execute("ALTER TABLE agendamentos ADD COLUMN concluido_em DATETIME NULL")
+                    conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:
+        print("Aviso: não foi possível garantir a coluna concluido_em:", e)
+
+
+garantir_coluna_concluido_em()
 app.json_provider_class = CustomJSONProvider
 app.secret_key = os.environ.get(
     "FLASK_SECRET_KEY", "barbearia_versati_secret_key_prod"
@@ -656,7 +675,10 @@ def api_concluir_agendamento(id):
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            cursor.execute("UPDATE agendamentos SET status = 'concluido' WHERE id = %s", (id,))
+            cursor.execute(
+                "UPDATE agendamentos SET status = 'concluido', concluido_em = %s WHERE id = %s",
+                (datetime.now(), id),
+            )
             conn.commit()
         return jsonify({"sucesso": True, "mensagem": "Atendimento concluído com sucesso!"}), 200
     except Exception as e:
@@ -694,10 +716,13 @@ def api_admin_financeiro():
 @app.route("/api/admin/agenda-equipe", methods=["GET"])
 @admin_required
 def api_admin_agenda_equipe():
+    if request.method == 'OPTIONS':
+        return "", 200
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT id, nome, cargo, especialidade, telefone FROM barbeiros ORDER BY id ASC")
+            # Adicionado IFNULL(foto_url, '') AS foto_url
+            cursor.execute("SELECT id, nome, cargo, especialidade, telefone, IFNULL(foto_url, '') AS foto_url FROM barbeiros ORDER BY id ASC")
             barbeiros = cursor.fetchall()
 
             cursor.execute("""
@@ -781,7 +806,7 @@ def api_admin_historico():
                        IFNULL(NULLIF(a.cliente_telefone, ''), IFNULL(u.telefone, 'Não informado')) AS cliente_telefone
                 FROM agendamentos a
                 LEFT JOIN usuarios u ON a.cliente_id = u.id
-                WHERE DATE(a.data) = %s AND LOWER(a.status) = 'concluido'
+                WHERE DATE(COALESCE(a.concluido_em, a.data)) = %s AND LOWER(a.status) = 'concluido'
                 ORDER BY a.horario ASC
             """, (data_filtro,))
             historico = cursor.fetchall()
@@ -1565,7 +1590,7 @@ def api_admin_dados():
                        IFNULL(NULLIF(a.cliente_telefone, ''), IFNULL(u.telefone, 'Não informado')) AS cliente_telefone
                 FROM agendamentos a
                 LEFT JOIN usuarios u ON a.cliente_id = u.id
-                WHERE DATE(a.data) = %s AND LOWER(a.status) IN ('concluido', 'finalizado')
+                WHERE DATE(COALESCE(a.concluido_em, a.data)) = %s AND LOWER(a.status) IN ('concluido', 'finalizado')
                 ORDER BY a.id DESC
             """, (data_filtro,))
             finalizados_raw = cursor.fetchall()
@@ -1594,8 +1619,8 @@ def api_admin_dados():
                        IFNULL(NULLIF(a.cliente_telefone, ''), IFNULL(u.telefone, 'Não informado')) AS cliente_telefone
                 FROM agendamentos a
                 LEFT JOIN usuarios u ON a.cliente_id = u.id
-                WHERE YEARWEEK(a.data, 1) = YEARWEEK(CURDATE(), 1) AND LOWER(a.status) IN ('concluido', 'finalizado')
-                ORDER BY a.data DESC, a.horario ASC
+                WHERE YEARWEEK(COALESCE(a.concluido_em, a.data), 1) = YEARWEEK(CURDATE(), 1) AND LOWER(a.status) IN ('concluido', 'finalizado')
+                ORDER BY COALESCE(a.concluido_em, a.data) DESC, a.horario ASC
             """)
             semanal_raw = cursor.fetchall()
             finalizados_semanal = []
@@ -1617,8 +1642,8 @@ def api_admin_dados():
                        IFNULL(NULLIF(a.cliente_telefone, ''), IFNULL(u.telefone, 'Não informado')) AS cliente_telefone
                 FROM agendamentos a
                 LEFT JOIN usuarios u ON a.cliente_id = u.id
-                WHERE MONTH(a.data) = MONTH(CURDATE()) AND YEAR(a.data) = YEAR(CURDATE()) AND LOWER(a.status) IN ('concluido', 'finalizado')
-                ORDER BY a.data DESC, a.horario ASC
+                WHERE MONTH(COALESCE(a.concluido_em, a.data)) = MONTH(CURDATE()) AND YEAR(COALESCE(a.concluido_em, a.data)) = YEAR(CURDATE()) AND LOWER(a.status) IN ('concluido', 'finalizado')
+                ORDER BY COALESCE(a.concluido_em, a.data) DESC, a.horario ASC
             """)
             mensal_raw = cursor.fetchall()
             finalizados_mensal = []
@@ -1637,21 +1662,21 @@ def api_admin_dados():
             cursor.execute("""
                 SELECT COUNT(*) as total 
                 FROM agendamentos 
-                WHERE DATE(data) = %s AND LOWER(status) IN ('concluido', 'finalizado')
+                WHERE DATE(COALESCE(concluido_em, data)) = %s AND LOWER(status) IN ('concluido', 'finalizado')
             """, (data_filtro,))
             cortes_diario = cursor.fetchone()["total"]
 
             cursor.execute("""
                 SELECT COUNT(*) as total 
                 FROM agendamentos 
-                WHERE YEARWEEK(data, 1) = YEARWEEK(CURDATE(), 1) AND LOWER(status) IN ('concluido', 'finalizado')
+                WHERE YEARWEEK(COALESCE(concluido_em, data), 1) = YEARWEEK(CURDATE(), 1) AND LOWER(status) IN ('concluido', 'finalizado')
             """)
             cortes_semanal = cursor.fetchone()["total"]
 
             cursor.execute("""
                 SELECT COUNT(*) as total 
                 FROM agendamentos 
-                WHERE MONTH(data) = MONTH(CURDATE()) AND YEAR(data) = YEAR(CURDATE()) AND LOWER(status) IN ('concluido', 'finalizado')
+                WHERE MONTH(COALESCE(concluido_em, data)) = MONTH(CURDATE()) AND YEAR(COALESCE(concluido_em, data)) = YEAR(CURDATE()) AND LOWER(status) IN ('concluido', 'finalizado')
             """)
             cortes_mensal = cursor.fetchone()["total"]
 
@@ -1665,7 +1690,7 @@ def api_admin_dados():
             cursor.execute("""
                 SELECT servico, COUNT(*) AS quantidade
                 FROM agendamentos
-                WHERE DATE(data) = %s AND LOWER(status) IN ('concluido', 'finalizado')
+                WHERE DATE(COALESCE(concluido_em, data)) = %s AND LOWER(status) IN ('concluido', 'finalizado')
                 GROUP BY servico
                 ORDER BY quantidade DESC
                 LIMIT 5
@@ -1725,7 +1750,16 @@ def atualizar_status_agendamento(id):
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            cursor.execute("UPDATE agendamentos SET status = %s WHERE id = %s", (novo_status, id))
+            if str(novo_status).strip().lower() in ('concluido', 'finalizado'):
+                cursor.execute(
+                    "UPDATE agendamentos SET status = %s, concluido_em = COALESCE(concluido_em, %s) WHERE id = %s",
+                    (novo_status, datetime.now(), id),
+                )
+            else:
+                cursor.execute(
+                    "UPDATE agendamentos SET status = %s, concluido_em = NULL WHERE id = %s",
+                    (novo_status, id),
+                )
             conn.commit()
             if cursor.rowcount > 0:
                 return jsonify({"sucesso": True, "mensagem": "Status atualizado!"}), 200
