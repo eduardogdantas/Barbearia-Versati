@@ -806,7 +806,7 @@ def api_admin_historico():
                        IFNULL(NULLIF(a.cliente_telefone, ''), IFNULL(u.telefone, 'Não informado')) AS cliente_telefone
                 FROM agendamentos a
                 LEFT JOIN usuarios u ON a.cliente_id = u.id
-                WHERE DATE(COALESCE(a.concluido_em, a.data)) = %s AND LOWER(a.status) = 'concluido'
+                WHERE DATE(a.data) = %s AND LOWER(a.status) = 'concluido'
                 ORDER BY a.horario ASC
             """, (data_filtro,))
             historico = cursor.fetchall()
@@ -1549,7 +1549,17 @@ def api_admin_resetar_senha():
 @admin_required
 def api_admin_dados():
     data_filtro = request.args.get("data", datetime.now().strftime("%Y-%m-%d"))
-    
+
+    def _data_valida(valor, padrao):
+        try:
+            return datetime.strptime(str(valor)[:10], "%Y-%m-%d").strftime("%Y-%m-%d")
+        except (ValueError, TypeError):
+            return padrao
+
+    # Semana e mês podem ter data própria (cards SEMANA e MÊS); sem ela, seguem o dia selecionado
+    semana_ref = _data_valida(request.args.get("semana", data_filtro), data_filtro)
+    mes_ref = _data_valida(request.args.get("mes", data_filtro), data_filtro)
+
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
@@ -1590,13 +1600,44 @@ def api_admin_dados():
                        IFNULL(NULLIF(a.cliente_telefone, ''), IFNULL(u.telefone, 'Não informado')) AS cliente_telefone
                 FROM agendamentos a
                 LEFT JOIN usuarios u ON a.cliente_id = u.id
-                WHERE DATE(COALESCE(a.concluido_em, a.data)) = %s AND LOWER(a.status) IN ('concluido', 'finalizado')
+                WHERE DATE(a.data) = %s AND LOWER(a.status) IN ('concluido', 'finalizado')
                 ORDER BY a.id DESC
             """, (data_filtro,))
             finalizados_raw = cursor.fetchall()
 
             cursor.execute("SELECT nome, preco FROM servicos")
             precos_por_servico = {str(s["nome"]).strip().lower(): float(s["preco"]) for s in cursor.fetchall()}
+
+            # Comissões por barbeiro/serviço (padrão 40% quando o serviço não foi configurado para o barbeiro)
+            cursor.execute("SELECT id, nome FROM barbeiros")
+            barbeiros_nomes = {b["id"]: str(b["nome"]).strip().lower() for b in cursor.fetchall()}
+            cursor.execute("""
+                SELECT bs.barbeiro_id, LOWER(TRIM(s.nome)) AS servico, bs.comissao_percentual
+                FROM barbeiro_servicos bs
+                JOIN servicos s ON s.id = bs.servico_id
+            """)
+            comissoes_cfg = {
+                (r["barbeiro_id"], r["servico"]): float(r["comissao_percentual"] if r["comissao_percentual"] is not None else 40.0)
+                for r in cursor.fetchall()
+            }
+
+            def _pct_comissao(profissional, servico):
+                prof = str(profissional or "").strip().lower()
+                serv = str(servico or "").strip().lower()
+                if not prof:
+                    return 0.0
+                bid = next((i for i, n in barbeiros_nomes.items() if n == prof), None)
+                if bid is None:
+                    bid = next((i for i, n in barbeiros_nomes.items() if n and (n in prof or prof in n)), None)
+                if bid is None:
+                    return 0.0
+                return comissoes_cfg.get((bid, serv), 40.0)
+
+            def _aplicar_comissao(item, preco):
+                pct = _pct_comissao(item.get("profissional"), item.get("servico"))
+                item["valor_num"] = round(float(preco), 2)
+                item["comissao_percentual"] = pct
+                item["comissao_valor"] = round(float(preco) * pct / 100.0, 2)
 
             finalizados = []
             for f in finalizados_raw:
@@ -1606,6 +1647,7 @@ def api_admin_dados():
                     preco_servico = precos_por_servico.get(nome_servico_chave, 0.0)
 
                 f["valor"] = f"R$ {preco_servico:.2f}".replace(".", ",")
+                _aplicar_comissao(f, preco_servico)
                 if hasattr(f.get("data"), "strftime"):
                     f["data"] = f["data"].strftime("%Y-%m-%d")
                 else:
@@ -1619,9 +1661,9 @@ def api_admin_dados():
                        IFNULL(NULLIF(a.cliente_telefone, ''), IFNULL(u.telefone, 'Não informado')) AS cliente_telefone
                 FROM agendamentos a
                 LEFT JOIN usuarios u ON a.cliente_id = u.id
-                WHERE YEARWEEK(COALESCE(a.concluido_em, a.data), 1) = YEARWEEK(CURDATE(), 1) AND LOWER(a.status) IN ('concluido', 'finalizado')
-                ORDER BY COALESCE(a.concluido_em, a.data) DESC, a.horario ASC
-            """)
+                WHERE YEARWEEK(a.data, 1) = YEARWEEK(%s, 1) AND LOWER(a.status) IN ('concluido', 'finalizado')
+                ORDER BY a.data DESC, a.horario ASC
+            """, (semana_ref,))
             semanal_raw = cursor.fetchall()
             finalizados_semanal = []
             for f in semanal_raw:
@@ -1629,6 +1671,7 @@ def api_admin_dados():
                 if ps <= 0:
                     ps = precos_por_servico.get(str(f.get("servico", "")).strip().lower(), 0.0)
                 f["valor"] = f"R$ {ps:.2f}".replace(".", ",")
+                _aplicar_comissao(f, ps)
                 if hasattr(f.get("data"), "strftime"):
                     f["data"] = f["data"].strftime("%Y-%m-%d")
                 else:
@@ -1642,9 +1685,9 @@ def api_admin_dados():
                        IFNULL(NULLIF(a.cliente_telefone, ''), IFNULL(u.telefone, 'Não informado')) AS cliente_telefone
                 FROM agendamentos a
                 LEFT JOIN usuarios u ON a.cliente_id = u.id
-                WHERE MONTH(COALESCE(a.concluido_em, a.data)) = MONTH(CURDATE()) AND YEAR(COALESCE(a.concluido_em, a.data)) = YEAR(CURDATE()) AND LOWER(a.status) IN ('concluido', 'finalizado')
-                ORDER BY COALESCE(a.concluido_em, a.data) DESC, a.horario ASC
-            """)
+                WHERE MONTH(a.data) = MONTH(%s) AND YEAR(a.data) = YEAR(%s) AND LOWER(a.status) IN ('concluido', 'finalizado')
+                ORDER BY a.data DESC, a.horario ASC
+            """, (mes_ref, mes_ref,))
             mensal_raw = cursor.fetchall()
             finalizados_mensal = []
             for f in mensal_raw:
@@ -1652,6 +1695,7 @@ def api_admin_dados():
                 if ps <= 0:
                     ps = precos_por_servico.get(str(f.get("servico", "")).strip().lower(), 0.0)
                 f["valor"] = f"R$ {ps:.2f}".replace(".", ",")
+                _aplicar_comissao(f, ps)
                 if hasattr(f.get("data"), "strftime"):
                     f["data"] = f["data"].strftime("%Y-%m-%d")
                 else:
@@ -1662,22 +1706,22 @@ def api_admin_dados():
             cursor.execute("""
                 SELECT COUNT(*) as total 
                 FROM agendamentos 
-                WHERE DATE(COALESCE(concluido_em, data)) = %s AND LOWER(status) IN ('concluido', 'finalizado')
+                WHERE DATE(data) = %s AND LOWER(status) IN ('concluido', 'finalizado')
             """, (data_filtro,))
             cortes_diario = cursor.fetchone()["total"]
 
             cursor.execute("""
                 SELECT COUNT(*) as total 
                 FROM agendamentos 
-                WHERE YEARWEEK(COALESCE(concluido_em, data), 1) = YEARWEEK(CURDATE(), 1) AND LOWER(status) IN ('concluido', 'finalizado')
-            """)
+                WHERE YEARWEEK(data, 1) = YEARWEEK(%s, 1) AND LOWER(status) IN ('concluido', 'finalizado')
+            """, (semana_ref,))
             cortes_semanal = cursor.fetchone()["total"]
 
             cursor.execute("""
                 SELECT COUNT(*) as total 
                 FROM agendamentos 
-                WHERE MONTH(COALESCE(concluido_em, data)) = MONTH(CURDATE()) AND YEAR(COALESCE(concluido_em, data)) = YEAR(CURDATE()) AND LOWER(status) IN ('concluido', 'finalizado')
-            """)
+                WHERE MONTH(data) = MONTH(%s) AND YEAR(data) = YEAR(%s) AND LOWER(status) IN ('concluido', 'finalizado')
+            """, (mes_ref, mes_ref,))
             cortes_mensal = cursor.fetchone()["total"]
 
             # 4. Valor total calculado para a data filtrada
@@ -1690,7 +1734,7 @@ def api_admin_dados():
             cursor.execute("""
                 SELECT servico, COUNT(*) AS quantidade
                 FROM agendamentos
-                WHERE DATE(COALESCE(concluido_em, data)) = %s AND LOWER(status) IN ('concluido', 'finalizado')
+                WHERE DATE(data) = %s AND LOWER(status) IN ('concluido', 'finalizado')
                 GROUP BY servico
                 ORDER BY quantidade DESC
                 LIMIT 5

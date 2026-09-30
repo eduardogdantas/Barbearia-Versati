@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Barbearia Versati</title>
     <!-- Logo na aba do navegador (Favicon) -->
-    <link rel="icon" type="image/jpeg" href="{{ url_for('static', filename='logo_Versati.jpeg') }}">
+    <link rel="icon" type="image/jpeg" href="{{ url_for('static', filename='img/logo_versati.jpeg') }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Anton&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
@@ -444,6 +444,21 @@
             color: var(--brass);
             text-decoration: underline;
         }
+
+        /* Mapa da localização */
+        .mapa-localizacao {
+            margin-top: 16px;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid var(--stroke);
+            background: var(--bg-card);
+        }
+        .mapa-localizacao iframe {
+            display: block;
+            width: 100%;
+            height: 320px;
+            border: 0;
+        }
         .horarios-list {
             display: flex;
             flex-direction: column;
@@ -602,6 +617,7 @@
             .sobre-section { padding: 55px 18px; }
             .sobre-container { text-align: left; }
             .tag, .pag-badge { font-size: 0.85rem; padding: 7px 12px; }
+            .mapa-localizacao iframe { height: 240px; }
 
             /* --- Modal ocupa quase a tela toda --- */
             .modal-overlay > * {
@@ -649,7 +665,7 @@
 
     <!-- Seção Principal (Hero) -->
     <section class="hero" id="topo-site">
-        <img class="hero-logo" src="{{ url_for('static', filename='img/logo_Versati.jpeg') }}" alt="Barbearia Versati">
+        <img class="hero-logo" src="{{ url_for('static', filename='img/logo_versati.jpeg') }}" alt="Barbearia Versati">
         <h1>Barbearia Versati</h1>
         <p>Corte, barba e cuidado de verdade — no seu tempo, do seu jeito.</p>
         
@@ -736,10 +752,21 @@
             <div class="sobre-card-info">
                 <h4>Localização</h4>
                 <p>
-                    <a href="https://www.google.com/maps/search/?api=1&query=Rua+Creusa+Campos+de+Vasconcelos+102+Joao+Pessoa+PB" target="_blank" title="Abrir no Google Maps">
-                        📍 Rua Creusa Campos de Vasconcelos, 102, João Pessoa, PB ↗
+                    <a href="https://www.google.com/maps/search/?api=1&query=Rua+Creusa+Campos+de+Vasconcelos+102+Mangabeira+IV+Joao+Pessoa+PB" target="_blank" title="Abrir no Google Maps">
+                        📍 Rua Creusa Campos de Vasconcelos, 102 - Mangabeira IV, João Pessoa, PB ↗
                     </a>
                 </p>
+
+                <!-- Mapa (Google Maps incorporado) -->
+                <div class="mapa-localizacao">
+                    <iframe
+                        src="https://www.google.com/maps?q=Rua+Creusa+Campos+de+Vasconcelos,+102,+Mangabeira+IV,+Jo%C3%A3o+Pessoa,+PB&output=embed"
+                        allowfullscreen
+                        loading="lazy"
+                        referrerpolicy="no-referrer-when-downgrade"
+                        title="Mapa da Barbearia Versati">
+                    </iframe>
+                </div>
             </div>
 
             <!-- Horários -->

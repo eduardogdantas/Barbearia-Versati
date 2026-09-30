@@ -148,7 +148,7 @@ class _AuthScreenState extends State<AuthScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Image.asset(
-                  'logo_versati.jpeg',
+                  'assets/logo_versati.jpeg',
                   height: 140,
                   fit: BoxFit.contain,
                   errorBuilder: (context, error, stackTrace) => const Icon(
@@ -889,10 +889,140 @@ class _FinanceiroViewState extends State<FinanceiroView> {
 
   final String _apiUrlBase = '${AppConfig.apiUrl}/admin/dados';
 
+  // Datas independentes dos cards SEMANA e MÊS (null = acompanha o dia selecionado / hoje)
+  DateTime? _dataSemana;
+  DateTime? _dataMes;
+
+  static const List<String> _mesesAbrev = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+
+  String _fmtApi(DateTime x) =>
+      "${x.year}-${x.month.toString().padLeft(2, '0')}-${x.day.toString().padLeft(2, '0')}";
+
   String get _apiUrl {
-    if (_dataFiltro == null) return _apiUrlBase;
-    final f = "${_dataFiltro!.year}-${_dataFiltro!.month.toString().padLeft(2, '0')}-${_dataFiltro!.day.toString().padLeft(2, '0')}";
-    return '$_apiUrlBase?data=$f';
+    final params = <String, String>{};
+    if (_dataFiltro != null) params['data'] = _fmtApi(_dataFiltro!);
+    if (_dataSemana != null) params['semana'] = _fmtApi(_dataSemana!);
+    if (_dataMes != null) params['mes'] = _fmtApi(_dataMes!);
+    if (params.isEmpty) return _apiUrlBase;
+    return Uri.parse(_apiUrlBase).replace(queryParameters: params).toString();
+  }
+
+  // Segunda a domingo da semana de referência
+  String get _intervaloSemana {
+    final ref = _dataSemana ?? _dataFiltro ?? DateTime.now();
+    final seg = DateTime(ref.year, ref.month, ref.day).subtract(Duration(days: ref.weekday - 1));
+    final dom = seg.add(const Duration(days: 6));
+    String dm(DateTime x) => "${x.day.toString().padLeft(2, '0')}/${x.month.toString().padLeft(2, '0')}";
+    return '${dm(seg)} - ${dm(dom)}';
+  }
+
+  String get _rotuloSemana => _dataSemana == null ? 'SEMANA' : _intervaloSemana;
+
+  String get _rotuloMes {
+    if (_dataMes == null) return 'MÊS';
+    return '${_mesesAbrev[_dataMes!.month - 1]}/${_dataMes!.year}';
+  }
+
+  String get _tituloDia => _dataFiltro == null
+      ? 'Atendimentos de Hoje'
+      : 'Atendimentos de ${_formatarDataCurta(_dataFiltro!)}';
+
+  String get _intervaloMes {
+    final ref = _dataMes ?? _dataFiltro ?? DateTime.now();
+    return '${_mesesAbrev[ref.month - 1]}/${ref.year}';
+  }
+
+  String get _tituloSemana =>
+      (_dataSemana == null && _dataFiltro == null) ? 'Atendimentos da Semana' : 'Semana $_intervaloSemana';
+
+  String get _tituloMes {
+    final ref = _dataMes ?? _dataFiltro;
+    if (ref == null) return 'Atendimentos do Mês';
+    return 'Mês de ${_mesesAbrev[ref.month - 1]}/${ref.year}';
+  }
+
+  Future<void> _selecionarSemana() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _dataSemana ?? _dataFiltro ?? DateTime.now(),
+      firstDate: DateTime(2023),
+      lastDate: DateTime(2030),
+      helpText: 'SELECIONE UM DIA DA SEMANA',
+      builder: (context, child) => Theme(
+        data: ThemeData.dark().copyWith(colorScheme: ColorScheme.dark(primary: _brandRed, onSurface: Colors.white)),
+        child: child!,
+      ),
+    );
+    if (picked != null) {
+      setState(() => _dataSemana = picked);
+      await carregarDados(manual: true);
+    }
+  }
+
+  Future<void> _selecionarMes() async {
+    final base = _dataMes ?? _dataFiltro ?? DateTime.now();
+    int ano = base.year;
+    final escolhido = await showDialog<DateTime>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          backgroundColor: _cardDark,
+          title: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left, color: Colors.white),
+                onPressed: ano > 2023 ? () => setD(() => ano--) : null,
+              ),
+              Text('$ano', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              IconButton(
+                icon: const Icon(Icons.chevron_right, color: Colors.white),
+                onPressed: ano < 2030 ? () => setD(() => ano++) : null,
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 280,
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: List.generate(12, (i) {
+                final sel = ano == base.year && i + 1 == base.month;
+                return InkWell(
+                  onTap: () => Navigator.pop(ctx, DateTime(ano, i + 1, 1)),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    width: 82,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color: sel ? _brandRed.withOpacity(0.25) : Colors.black,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: sel ? _brandRed : Colors.white10),
+                    ),
+                    child: Center(
+                      child: Text(_mesesAbrev[i], style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                    ),
+                  ),
+                );
+              }),
+            ),
+          ),
+        ),
+      ),
+    );
+    if (escolhido != null) {
+      setState(() => _dataMes = escolhido);
+      await carregarDados(manual: true);
+    }
+  }
+
+  void _resetarSemanaMes() {
+    if (_dataSemana == null && _dataMes == null) return;
+    setState(() {
+      _dataSemana = null;
+      _dataMes = null;
+    });
+    carregarDados(manual: true);
   }
 
   @override
@@ -1076,13 +1206,21 @@ class _FinanceiroViewState extends State<FinanceiroView> {
       },
     );
     if (picked != null) {
-      setState(() => _dataFiltro = picked);
+      setState(() {
+        _dataFiltro = picked;
+        _dataSemana = null;
+        _dataMes = null;
+      });
       carregarDados(manual: true);
     }
   }
 
   void _limparFiltroData() {
-    setState(() => _dataFiltro = null);
+    setState(() {
+      _dataFiltro = null;
+      _dataSemana = null;
+      _dataMes = null;
+    });
     carregarDados(manual: true);
   }
 
@@ -1090,7 +1228,302 @@ class _FinanceiroViewState extends State<FinanceiroView> {
     return "${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}";
   }
 
-  void _mostrarListaPeriodo(String titulo, List<dynamic> lista) {
+  // ---------------------------------------------------------------------------
+  // COMISSÕES DOS BARBEIROS
+  // ---------------------------------------------------------------------------
+  String _comissaoPeriodo = 'dia'; // 'dia' | 'semana' | 'mes'
+
+  double _numItem(dynamic v) => double.tryParse('${v ?? 0}') ?? 0;
+
+  String _moeda(double v) => 'R\$ ${v.toStringAsFixed(2).replaceAll('.', ',')}';
+
+  String _pctTxt(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
+
+  Widget _linhaComissao(dynamic item) {
+    if (item['comissao_valor'] == null) return const SizedBox.shrink();
+    final pct = _numItem(item['comissao_percentual']);
+    final val = _numItem(item['comissao_valor']);
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Text(
+        'Comissão ${_pctTxt(pct)}% • ${_moeda(val)}',
+        style: const TextStyle(color: Colors.orangeAccent, fontSize: 11, fontWeight: FontWeight.w600),
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+
+  List<dynamic> get _baseComissao {
+    if (_comissaoPeriodo == 'semana') return _semanalVisiveis;
+    if (_comissaoPeriodo == 'mes') return _mensalVisiveis;
+    return _finalizadosVisiveis;
+  }
+
+  String get _rotuloPeriodoComissao {
+    if (_comissaoPeriodo == 'semana') return 'Semana $_intervaloSemana';
+    if (_comissaoPeriodo == 'mes') return 'Mês $_intervaloMes';
+    return _dataFiltro == null ? 'Hoje' : 'Dia ${_formatarDataCurta(_dataFiltro!)}';
+  }
+
+  Map<String, Map<String, dynamic>> _agruparComissoes() {
+    final Map<String, Map<String, dynamic>> porBarbeiro = {};
+    for (final item in _baseComissao) {
+      final nome = (item['profissional'] ?? 'Sem barbeiro').toString().trim();
+      final servico = (item['servico'] ?? 'Serviço').toString().trim();
+      final valor = item['valor_num'] != null ? _numItem(item['valor_num']) : _valorDoItem(item);
+      final comissao = _numItem(item['comissao_valor']);
+      final pct = _numItem(item['comissao_percentual']);
+
+      final b = porBarbeiro.putIfAbsent(nome, () => {'qtd': 0, 'fat': 0.0, 'com': 0.0, 'servicos': <String, Map<String, dynamic>>{}});
+      b['qtd'] = (b['qtd'] as int) + 1;
+      b['fat'] = (b['fat'] as double) + valor;
+      b['com'] = (b['com'] as double) + comissao;
+
+      final servicos = b['servicos'] as Map<String, Map<String, dynamic>>;
+      final sv = servicos.putIfAbsent(servico, () => {'qtd': 0, 'fat': 0.0, 'com': 0.0, 'pct': pct});
+      sv['qtd'] = (sv['qtd'] as int) + 1;
+      sv['fat'] = (sv['fat'] as double) + valor;
+      sv['com'] = (sv['com'] as double) + comissao;
+      sv['pct'] = pct;
+    }
+    return porBarbeiro;
+  }
+
+  dynamic _fotoDoBarbeiro(String nome) {
+    for (final b in _barbeirosFiltro) {
+      if ((b['nome'] ?? '').toString().trim().toLowerCase() == nome.toLowerCase()) return b['foto_url'];
+    }
+    return null;
+  }
+
+  Widget _chipPeriodoComissao(String valor, String label) {
+    final ativo = _comissaoPeriodo == valor;
+    return Padding(
+      padding: const EdgeInsets.only(left: 6),
+      child: InkWell(
+        onTap: () => setState(() => _comissaoPeriodo = valor),
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: ativo ? _brandRed.withOpacity(0.2) : _cardDark,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: ativo ? _brandRed : Colors.white10),
+          ),
+          child: Text(label, style: TextStyle(color: ativo ? Colors.white : _textSecondary, fontSize: 11, fontWeight: FontWeight.bold)),
+        ),
+      ),
+    );
+  }
+
+  Widget _resumoLinha(String rotulo, String valor, Color cor, {bool destaque = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(rotulo, style: TextStyle(color: _textSecondary, fontSize: destaque ? 13 : 12, fontWeight: destaque ? FontWeight.bold : FontWeight.normal)),
+          Text(valor, style: TextStyle(color: cor, fontSize: destaque ? 15 : 13, fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSecaoComissoes() {
+    final grupos = _agruparComissoes();
+    final nomes = grupos.keys.toList()
+      ..sort((a, b) => (grupos[b]!['com'] as double).compareTo(grupos[a]!['com'] as double));
+    final double totalFat = grupos.values.fold<double>(0, (s, g) => s + (g['fat'] as double));
+    final double totalCom = grupos.values.fold<double>(0, (s, g) => s + (g['com'] as double));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Text('Comissões dos Barbeiros', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+            ),
+            _chipPeriodoComissao('dia', 'Dia'),
+            _chipPeriodoComissao('semana', 'Semana'),
+            _chipPeriodoComissao('mes', 'Mês'),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(_rotuloPeriodoComissao, style: TextStyle(color: _textSecondary, fontSize: 12)),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: _cardDark,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.orangeAccent.withOpacity(0.3)),
+          ),
+          child: Column(
+            children: [
+              _resumoLinha('Faturamento (cortes finalizados)', _moeda(totalFat), Colors.white),
+              _resumoLinha('Comissões a pagar', _moeda(totalCom), Colors.orangeAccent),
+              const Divider(color: Colors.white10, height: 16),
+              _resumoLinha('Fica na barbearia', _moeda(totalFat - totalCom), Colors.greenAccent, destaque: true),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (nomes.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(color: _cardDark, borderRadius: BorderRadius.circular(12)),
+            child: Text('Nenhum corte finalizado neste período.', style: TextStyle(color: _textSecondary, fontSize: 12)),
+          )
+        else
+          ...nomes.map((nome) {
+            final g = grupos[nome]!;
+            final servicos = g['servicos'] as Map<String, Map<String, dynamic>>;
+            return Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              decoration: BoxDecoration(
+                color: _cardDark,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white10),
+              ),
+              child: Theme(
+                data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                child: ExpansionTile(
+                  tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                  childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                  iconColor: _textSecondary,
+                  collapsedIconColor: _textSecondary,
+                  leading: _buildAvatarBarbeiro(_fotoDoBarbeiro(nome), radius: 18),
+                  title: Text(nome, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14), overflow: TextOverflow.ellipsis),
+                  subtitle: Text(
+                    '${g['qtd']} corte(s) • Faturou ${_moeda(g['fat'] as double)}',
+                    style: TextStyle(color: _textSecondary, fontSize: 11),
+                  ),
+                  trailing: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text('A RECEBER', style: TextStyle(color: _textSecondary, fontSize: 9, fontWeight: FontWeight.bold)),
+                      Text(_moeda(g['com'] as double), style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 14)),
+                    ],
+                  ),
+                  children: servicos.entries.map((e) {
+                    final sv = e.value;
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(e.key, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                                Text(
+                                  '${sv['qtd']}x • ${_moeda(sv['fat'] as double)} • ${_pctTxt(sv['pct'] as double)}% de comissão',
+                                  style: TextStyle(color: _textSecondary, fontSize: 11),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(_moeda(sv['com'] as double), style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 12)),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            );
+          }),
+        Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Text(
+            'Comissão calculada sobre os serviços (percentual definido na aba Comissões de cada barbeiro).',
+            style: TextStyle(color: _textSecondary, fontSize: 10),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Card pequeno e visível dentro do painel para escolher a data da semana ou do mês
+  Widget _seletorPeriodoSheet(String tipo, StateSetter setSheet) {
+    final bool semana = tipo == 'semana';
+    final bool personalizado = semana ? _dataSemana != null : _dataMes != null;
+    final String rotulo = semana ? 'Semana: $_intervaloSemana' : 'Mês: $_intervaloMes';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: _brandRed.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _brandRed.withOpacity(personalizado ? 0.8 : 0.4)),
+      ),
+      child: Row(
+        children: [
+          Icon(semana ? Icons.calendar_view_week : Icons.calendar_month, color: _brandRed, size: 16),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              rotulo,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+            ),
+          ),
+          if (personalizado)
+            InkWell(
+              onTap: () async {
+                setState(() {
+                  if (semana) {
+                    _dataSemana = null;
+                  } else {
+                    _dataMes = null;
+                  }
+                });
+                await carregarDados(manual: true);
+                setSheet(() {});
+              },
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                padding: const EdgeInsets.all(5),
+                margin: const EdgeInsets.only(right: 6),
+                decoration: BoxDecoration(color: Colors.white.withOpacity(0.08), shape: BoxShape.circle),
+                child: const Icon(Icons.restart_alt, color: Colors.white70, size: 16),
+              ),
+            ),
+          InkWell(
+            onTap: () async {
+              if (semana) {
+                await _selecionarSemana();
+              } else {
+                await _selecionarMes();
+              }
+              setSheet(() {});
+            },
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(color: _brandRed, borderRadius: BorderRadius.circular(8)),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(Icons.edit_calendar, color: Colors.white, size: 14),
+                  SizedBox(width: 4),
+                  Text('Alterar', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // tipo: 'dia' | 'semana' | 'mes'
+  void _mostrarListaPeriodo(String tipo) {
     showModalBottomSheet(
       context: context,
       backgroundColor: _cardDark,
@@ -1099,6 +1532,9 @@ class _FinanceiroViewState extends State<FinanceiroView> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (context) {
+        return StatefulBuilder(builder: (context, setSheet) {
+        final String titulo = tipo == 'semana' ? _tituloSemana : (tipo == 'mes' ? _tituloMes : _tituloDia);
+        final List<dynamic> lista = tipo == 'semana' ? _semanalVisiveis : (tipo == 'mes' ? _mensalVisiveis : _finalizadosVisiveis);
         return DraggableScrollableSheet(
           initialChildSize: 0.85,
           minChildSize: 0.5,
@@ -1121,10 +1557,15 @@ class _FinanceiroViewState extends State<FinanceiroView> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        titulo,
-                        style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                      Expanded(
+                        child: Text(
+                          titulo,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
                       ),
+                      const SizedBox(width: 8),
                       Text(
                         '${lista.length} atendimento(s)',
                         style: TextStyle(color: _brandRed, fontWeight: FontWeight.bold, fontSize: 13),
@@ -1132,6 +1573,7 @@ class _FinanceiroViewState extends State<FinanceiroView> {
                     ],
                   ),
                   const Divider(color: Colors.white10, height: 20),
+                  if (tipo != 'dia') _seletorPeriodoSheet(tipo, setSheet),
                   Expanded(
                     child: lista.isEmpty
                         ? Center(
@@ -1170,6 +1612,7 @@ class _FinanceiroViewState extends State<FinanceiroView> {
                                             'Data: ${item['data'] ?? '--/--'} • Hora: ${item['horario'] ?? '--:--'} • Barbeiro: ${item['profissional'] ?? ''}',
                                             style: TextStyle(color: _textSecondary, fontSize: 11),
                                           ),
+                                          _linhaComissao(item),
                                         ],
                                       ),
                                     ),
@@ -1189,6 +1632,7 @@ class _FinanceiroViewState extends State<FinanceiroView> {
             );
           },
         );
+        });
       },
     );
   }
@@ -1279,19 +1723,22 @@ class _FinanceiroViewState extends State<FinanceiroView> {
 
                   Row(
                     children: [
-                      _buildClickableMetricCard('HOJE', '${_contagem('diario', _finalizadosVisiveis)} Cortes', Icons.today, () {
-                        _mostrarListaPeriodo('Atendimentos de Hoje', _finalizadosVisiveis);
+                      _buildClickableMetricCard(_dataFiltro == null ? 'HOJE' : 'DIA ${_formatarDataCurta(_dataFiltro!).substring(0, 5)}', '${_contagem('diario', _finalizadosVisiveis)} Cortes', Icons.today, () {
+                        _mostrarListaPeriodo('dia');
                       }),
                       const SizedBox(width: 8),
-                      _buildClickableMetricCard('SEMANA', '${_contagem('semanal', _semanalVisiveis)} Cortes', Icons.calendar_view_week, () {
-                        _mostrarListaPeriodo('Atendimentos da Semana', _semanalVisiveis);
-                      }),
+                      _buildClickableMetricCard(_rotuloSemana, '${_contagem('semanal', _semanalVisiveis)} Cortes', Icons.calendar_view_week, () {
+                        _mostrarListaPeriodo('semana');
+                      }, onPickDate: _selecionarSemana, onResetDate: _resetarSemanaMes, personalizado: _dataSemana != null),
                       const SizedBox(width: 8),
-                      _buildClickableMetricCard('MÊS', '${_contagem('mensal', _mensalVisiveis)} Cortes', Icons.calendar_month, () {
-                        _mostrarListaPeriodo('Atendimentos do Mês', _mensalVisiveis);
-                      }),
+                      _buildClickableMetricCard(_rotuloMes, '${_contagem('mensal', _mensalVisiveis)} Cortes', Icons.calendar_month, () {
+                        _mostrarListaPeriodo('mes');
+                      }, onPickDate: _selecionarMes, onResetDate: _resetarSemanaMes, personalizado: _dataMes != null),
                     ],
                   ),
+                  const SizedBox(height: 24),
+
+                  _buildSecaoComissoes(),
                   const SizedBox(height: 24),
 
                   const Text('Serviços Mais Solicitados', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
@@ -1354,28 +1801,67 @@ class _FinanceiroViewState extends State<FinanceiroView> {
           );
   }
 
-  Widget _buildClickableMetricCard(String title, String value, IconData icon, VoidCallback onTap) {
+  Widget _buildClickableMetricCard(
+    String title,
+    String value,
+    IconData icon,
+    VoidCallback onTap, {
+    VoidCallback? onPickDate,
+    VoidCallback? onResetDate,
+    bool personalizado = false,
+  }) {
     return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
-          decoration: BoxDecoration(
-            color: _cardDark,
+      child: Stack(
+        children: [
+          InkWell(
+            onTap: onTap,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: _brandRed.withOpacity(0.3)),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+              decoration: BoxDecoration(
+                color: _cardDark,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: personalizado ? _brandRed : _brandRed.withOpacity(0.3)),
+              ),
+              child: Column(
+                children: [
+                  Icon(icon, color: _brandRed, size: 20),
+                  const SizedBox(height: 6),
+                  Text(value, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 2),
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: personalizado ? Colors.white : _textSecondary, fontSize: 10, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
           ),
-          child: Column(
-            children: [
-              Icon(icon, color: _brandRed, size: 20),
-              const SizedBox(height: 6),
-              Text(value, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 2),
-              Text(title, style: TextStyle(color: _textSecondary, fontSize: 10, fontWeight: FontWeight.w600)),
-            ],
-          ),
-        ),
+          if (onPickDate != null)
+            Positioned(
+              top: 4,
+              right: 4,
+              child: Tooltip(
+                message: 'Escolher data (segure para voltar ao padrão)',
+                child: InkWell(
+                  onTap: onPickDate,
+                  onLongPress: onResetDate,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: personalizado ? _brandRed.withOpacity(0.25) : Colors.white.withOpacity(0.06),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(Icons.edit_calendar, size: 13, color: personalizado ? Colors.white : _textSecondary),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -1441,6 +1927,7 @@ class _FinanceiroViewState extends State<FinanceiroView> {
                         style: const TextStyle(color: Colors.white54, fontSize: 11),
                         overflow: TextOverflow.ellipsis,
                       ),
+                      _linhaComissao(item),
                     ],
                   ),
                 ),
@@ -2937,8 +3424,8 @@ class _GerenciarAssinaturasScreenState extends State<GerenciarAssinaturasScreen>
                                       children: [
                                         Icon(Icons.card_membership, color: _brandRed, size: 18),
                                         const SizedBox(width: 8),
-                                        Text(p['nome'] ?? 'Plano', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13)),
-                                        const Spacer(),
+                                        Expanded(child: Text(p['nome'] ?? 'Plano', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13))),
+                                        const SizedBox(width: 8),
                                         Text('R\$ ${(double.tryParse('${p['preco']}') ?? 0).toStringAsFixed(2).replaceAll('.', ',')}', style: TextStyle(color: _brandRed, fontWeight: FontWeight.bold, fontSize: 14)),
                                       ],
                                     ),
@@ -3208,8 +3695,8 @@ class _GerenciarAssinaturasScreenState extends State<GerenciarAssinaturasScreen>
             children: [
               Icon(Icons.card_membership, color: _brandRed, size: 18),
               const SizedBox(width: 8),
-              Text(p['nome'] ?? 'Plano', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13)),
-              const Spacer(),
+              Expanded(child: Text(p['nome'] ?? 'Plano', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13))),
+              const SizedBox(width: 8),
               Text('R\$ ${(double.tryParse('${p['preco']}') ?? 0).toStringAsFixed(2).replaceAll('.', ',')}', style: TextStyle(color: _brandRed, fontWeight: FontWeight.bold, fontSize: 14)),
             ],
           ),
