@@ -24,9 +24,9 @@ flutter_launcher_icons:
   android: true
   ios: true
   remove_alpha_ios: true
-  image_path: "assets/logo_versati.png"
+  image_path: "assets/logo_versati.jpeg"
   adaptive_icon_background: "#000000"
-  adaptive_icon_foreground: "assets/logo_versati_foreground.png"
+  adaptive_icon_foreground: "assets/logo_versati_foreground.jpeg"
 
 flutter:
   uses-material-design: true
