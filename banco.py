@@ -67,14 +67,17 @@ def _ssl_context():
 
 def _conectar(com_banco=True):
     kwargs = dict(
-    host=DB_HOST,
-    port=DB_PORT,
-    user=DB_USER,
-    password=DB_PASSWORD,
-    database=DB_NAME,
-    ssl={"ca": DB_SSL_CA} if DB_SSL_CA else {"ssl": {}},
-    # mantenha o que você já tinha (cursorclass, charset etc.)
-)
+        host=DB_HOST,
+        port=DB_PORT,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        charset="utf8mb4",
+        cursorclass=pymysql.cursors.DictCursor,
+        connect_timeout=15,
+    )
+    # SSL só fora do localhost (Aiven exige)
+    if DB_HOST not in ("localhost", "127.0.0.1", "::1"):
+        kwargs["ssl"] = {"ca": DB_SSL_CA} if DB_SSL_CA else {"ssl": {}}
     if com_banco:
         kwargs["database"] = DB_NAME
     return pymysql.connect(**kwargs)
