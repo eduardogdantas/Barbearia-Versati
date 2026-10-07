@@ -1,12 +1,15 @@
 from datetime import datetime, timedelta
-from decimal import Decimal
+from collections import defaultdict, deque
+from decimal import Decimal, InvalidOperation
+import hashlib
+import hmac
+import logging
 import os
 import re
-import uuid
-import hmac
-import hashlib
+import time
+from urllib.parse import urlparse
 
-import requests
+import pymysql
 
 from banco import get_db_connection
 from flask import (
@@ -21,32 +24,208 @@ from flask import (
 from flask.json.provider import DefaultJSONProvider
 from flask_cors import CORS
 import mercadopago
+from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 from functools import wraps
 
 sdk = mercadopago.SDK(os.environ.get("MERCADO_PAGO_ACCESS_TOKEN"))
 
 ADMIN_API_TOKEN = os.environ.get("ADMIN_API_TOKEN")
+MERCADO_PAGO_WEBHOOK_SECRET = os.environ.get("MERCADO_PAGO_WEBHOOK_SECRET")
+DEBUG_MODE = os.environ.get("FLASK_DEBUG", "False").lower() == "true"
+PUBLIC_BASE_URL = (os.environ.get("PUBLIC_BASE_URL") or "http://127.0.0.1:5000").rstrip("/")
+CORS_ORIGINS = [o.strip().rstrip("/") for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
+
+if not ADMIN_API_TOKEN or len(ADMIN_API_TOKEN) < 24:
+    logging.warning("ADMIN_API_TOKEN ausente ou curto (<24): rotas /api/admin ficam bloqueadas ou fracas.")
+if not MERCADO_PAGO_WEBHOOK_SECRET:
+    logging.warning("MERCADO_PAGO_WEBHOOK_SECRET ausente: o webhook rejeitará todas as chamadas.")
+
+# ==============================================================================
+# VALIDAÇÃO DE ENTRADA
+# ==============================================================================
+EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,255}\.[^@\s]{2,}$")
+HORA_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+TELEFONE_RE = re.compile(r"^[\d\s()+-]{0,20}$")
+STATUS_RE = re.compile(r"^[A-Za-zÀ-ÿ _-]{3,20}$")
+BASE64_RE = re.compile(r"^[A-Za-z0-9+/=\s]+$")
+TIPOS_PAGAMENTO = {"presencial", "plano", "vip", "pix", "cartao", "dinheiro", "debito", "credito", "saldo"}
+HORARIOS_VALIDOS = []
+for _h in range(9, 20):
+    HORARIOS_VALIDOS.append(f"{_h:02d}:00")
+    if _h < 19:
+        HORARIOS_VALIDOS.append(f"{_h:02d}:30")
+_INVALIDO = object()
+
+
+def parse_decimal(valor, minimo=0, maximo=100000):
+    """Converte para Decimal com 2 casas; devolve None se inválido ou fora do intervalo."""
+    try:
+        d = Decimal(str(valor).strip().replace(",", "."))
+    except (InvalidOperation, ValueError):
+        return None
+    if not d.is_finite() or d < minimo or d > maximo:
+        return None
+    return d.quantize(Decimal("0.01"))
+
+
+def parse_int(valor, minimo=0, maximo=1000000):
+    try:
+        if isinstance(valor, bool):
+            return None
+        n = int(str(valor).strip())
+    except (ValueError, TypeError):
+        return None
+    return n if minimo <= n <= maximo else None
+
+
+def validar_foto(foto):
+    """Aceita vazio, URL http(s), data URI de imagem ou base64 puro; limita o tamanho."""
+    if not foto:
+        return True
+    if len(foto) > 3_000_000:
+        return False
+    prefixos = ("data:image/png;base64,", "data:image/jpeg;base64,", "data:image/jpg;base64,",
+                "data:image/webp;base64,", "data:image/gif;base64,", "https://", "http://")
+    return foto.startswith(prefixos) or bool(BASE64_RE.match(foto))
+
+
+def cpf_valido(cpf):
+    if len(cpf) != 11 or not cpf.isdigit() or cpf == cpf[0] * 11:
+        return False
+    for i in (9, 10):
+        soma = sum(int(cpf[n]) * (i + 1 - n) for n in range(i))
+        if (soma * 10 % 11) % 10 != int(cpf[i]):
+            return False
+    return True
+
+
+def validar_cadastro(nome, email, senha, telefone):
+    if not nome or not email or not senha:
+        return "Preencha todos os campos obrigatórios!"
+    if len(nome) > 100 or len(email) > 100 or not EMAIL_RE.match(email):
+        return "Nome ou e-mail inválido."
+    if not (8 <= len(senha) <= 128):
+        return "A senha deve ter entre 8 e 128 caracteres."
+    if not TELEFONE_RE.match(telefone or ""):
+        return "Telefone inválido."
+    return None
+
+
+def conv_texto(maximo, obrigatorio=False):
+    def conv(v):
+        s = ("" if v is None else str(v)).strip()
+        if (obrigatorio and not s) or len(s) > maximo:
+            return _INVALIDO
+        return s
+    return conv
+
+
+def conv_decimal(minimo=0, maximo=100000):
+    def conv(v):
+        d = parse_decimal(v, minimo, maximo)
+        return _INVALIDO if d is None else d
+    return conv
+
+
+def conv_inteiro(minimo=0, maximo=1000000):
+    def conv(v):
+        n = parse_int(v, minimo, maximo)
+        return _INVALIDO if n is None else n
+    return conv
+
+
+def conv_bool(v):
+    return 1 if v in (True, 1, "1", "true", "True") else 0
+
+
+def conv_foto(v):
+    s = ("" if v is None else str(v)).strip()
+    return s if validar_foto(s) else _INVALIDO
+
+
+def montar_update(data, permitidos):
+    """Monta o SET de um UPDATE usando só campos permitidos (nomes vêm do dict, nunca do usuário)."""
+    campos, valores = [], []
+    for campo, conv in permitidos.items():
+        if campo in data:
+            valor = conv(data[campo])
+            if valor is _INVALIDO:
+                return None, None, campo
+            campos.append(f"{campo} = %s")
+            valores.append(valor)
+    return campos, valores, None
+
+
+# ==============================================================================
+# LIMITE DE TENTATIVAS (em memória, por processo; use Redis se rodar vários workers)
+# ==============================================================================
+_tentativas = defaultdict(deque)
+
+
+def _ip_cliente():
+    return request.remote_addr or "desconhecido"
+
+
+def _limite_excedido(chave, maximo, janela):
+    agora = time.time()
+    fila = _tentativas[chave]
+    while fila and agora - fila[0] > janela:
+        fila.popleft()
+    if len(_tentativas) > 5000:
+        for k in [k for k, v in _tentativas.items() if not v]:
+            del _tentativas[k]
+    return len(fila) >= maximo
+
+
+def _registrar_tentativa(chave):
+    _tentativas[chave].append(time.time())
+
+
+def rate_limit(maximo, janela, nome):
+    """Limita requisições POST por IP."""
+    def deco(f):
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            if request.method == "POST":
+                chave = f"{nome}:{_ip_cliente()}"
+                if _limite_excedido(chave, maximo, janela):
+                    return jsonify({"sucesso": False, "mensagem": "Muitas tentativas. Aguarde alguns minutos."}), 429
+                _registrar_tentativa(chave)
+            return f(*args, **kwargs)
+        return wrapper
+    return deco
+
+
+# ==============================================================================
+# AUTENTICAÇÃO ADMIN
+# ==============================================================================
+def _token_admin_valido():
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer ") or not ADMIN_API_TOKEN:
+        return False
+    token = auth[7:].strip()
+    return bool(token) and hmac.compare_digest(token.encode("utf-8"), ADMIN_API_TOKEN.encode("utf-8"))
+
 
 def admin_required(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
-        # Permite imediatamente qualquer requisição OPTIONS de pré-voo do navegador
+        # Pré-voo CORS não carrega credenciais; as respostas CORS ficam por conta do Flask-CORS
         if request.method == "OPTIONS":
-            response = jsonify({"sucesso": True})
-            response.headers.add("Access-Control-Allow-Origin", "*")
-            response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
-            response.headers.add("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
-            return response, 200
-            
-        auth_header = request.headers.get("Authorization", "")
-        token = auth_header.replace("Bearer ", "").strip()
-        
-        if not ADMIN_API_TOKEN or token != ADMIN_API_TOKEN:
+            return "", 204
+
+        chave = f"admin-falha:{_ip_cliente()}"
+        if _limite_excedido(chave, 10, 300):
+            return jsonify({"sucesso": False, "mensagem": "Muitas tentativas. Aguarde alguns minutos."}), 429
+
+        if not _token_admin_valido():
+            _registrar_tentativa(chave)
             return jsonify({"sucesso": False, "mensagem": "Não autorizado"}), 401
-            
+
         return f(*args, **kwargs)
     return wrapper
+
 
 class CustomJSONProvider(DefaultJSONProvider):
     """Converte objetos Decimal em float para não quebrar a serialização JSON."""
@@ -77,20 +256,84 @@ def garantir_coluna_concluido_em():
         print("Aviso: não foi possível garantir a coluna concluido_em:", e)
 
 
+def garantir_tabela_pagamentos():
+    """Tabela de pagamentos já processados (idempotência da ativação de planos)."""
+    try:
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "CREATE TABLE IF NOT EXISTS pagamentos_processados ("
+                    "pagamento_id VARCHAR(64) PRIMARY KEY, cliente_id INT NOT NULL, "
+                    "processado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB"
+                )
+        finally:
+            conn.close()
+    except Exception as e:
+        print("Aviso: não foi possível garantir a tabela pagamentos_processados:", e)
+
+
 garantir_coluna_concluido_em()
+garantir_tabela_pagamentos()
 app.json_provider_class = CustomJSONProvider
-app.secret_key = os.environ.get(
-    "FLASK_SECRET_KEY", "barbearia_versati_secret_key_prod"
+
+_secret = os.environ.get("FLASK_SECRET_KEY")
+if not _secret or len(_secret) < 32:
+    raise RuntimeError(
+        "FLASK_SECRET_KEY ausente ou curta (mínimo 32 caracteres). Gere uma com: "
+        "python -c \"import secrets; print(secrets.token_hex(32))\""
+    )
+app.secret_key = _secret
+
+if os.environ.get("TRUST_PROXY", "").lower() == "true":
+    # Atrás de Nginx/Render/Heroku: usa X-Forwarded-* para IP, host e esquema reais
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
+_cookie_seguro_env = os.environ.get("SESSION_COOKIE_SECURE")
+SESSION_COOKIE_SEGURO = (_cookie_seguro_env.lower() == "true") if _cookie_seguro_env else (not DEBUG_MODE)
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=SESSION_COOKIE_SEGURO,
+    PERMANENT_SESSION_LIFETIME=timedelta(days=7),
+    MAX_CONTENT_LENGTH=6 * 1024 * 1024,
 )
-CORS(
-    app,
-    resources={r"/api/*": {"origins": "*"}},
-    supports_credentials=True,
-    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
-    expose_headers=["Content-Type", "Authorization"],
-    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    max_age=86400,
-)
+# O app Flutter não usa CORS. Só habilite se o site/painel web ficar em OUTRO domínio.
+if CORS_ORIGINS:
+    CORS(
+        app,
+        resources={r"/api/*": {"origins": CORS_ORIGINS}},
+        supports_credentials=True,
+        allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        max_age=3600,
+    )
+
+
+@app.before_request
+def protecao_csrf_por_origem():
+    """Bloqueia requisições que alteram dados vindas de outra origem (CSRF), sem exigir mudança nos templates."""
+    if request.method in ("POST", "PUT", "PATCH", "DELETE") and request.path != "/api/webhook":
+        if request.headers.get("Authorization"):
+            return None  # chamadas com token (app) não dependem de cookie
+        origem = request.headers.get("Origin")
+        if origem:
+            origem = origem.rstrip("/")
+            if urlparse(origem).netloc != request.host and origem not in CORS_ORIGINS:
+                return jsonify({"sucesso": False, "mensagem": "Origem não permitida."}), 403
+    return None
+
+
+@app.after_request
+def cabecalhos_de_seguranca(resp):
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    if SESSION_COOKIE_SEGURO:
+        resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    if request.path.startswith("/api/"):
+        resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @app.route('/api/admin/servicos/<int:servico_id>', methods=['PUT', 'DELETE'])
@@ -112,6 +355,9 @@ def editar_ou_remover_servico(servico_id):
 
             if not nome:
                 return jsonify({'sucesso': False, 'mensagem': 'Nome obrigatório'}), 400
+            preco = parse_decimal(preco)
+            if preco is None or len(nome) > 150 or len(categoria) > 80 or not validar_foto(foto):
+                return jsonify({'sucesso': False, 'mensagem': 'Dados inválidos (preço, nome ou foto).'}), 400
 
             cursor.execute(
                 """UPDATE servicos 
@@ -130,13 +376,6 @@ def editar_ou_remover_servico(servico_id):
 @app.route('/api/admin/barbeiro/<int:barbeiro_id>/comissoes', methods=['GET', 'POST', 'OPTIONS'])
 @admin_required
 def gerenciar_comissoes_barbeiro(barbeiro_id):
-    if request.method == 'OPTIONS':
-        response = jsonify({'sucesso': True})
-        response.headers.add("Access-Control-Allow-Origin", "*")
-        response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
-        response.headers.add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-        return response, 200
-
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
@@ -145,11 +384,16 @@ def gerenciar_comissoes_barbeiro(barbeiro_id):
                 tipo = dados.get('tipo') 
                 item_id = dados.get('item_id') 
                 
+                if tipo not in ('servico', 'produto') or parse_int(item_id, 1) is None:
+                    return jsonify({'sucesso': False, 'mensagem': 'Tipo ou item inválido.'}), 400
+
                 if tipo == 'servico':
                     realiza = 1 if dados.get('realiza', True) else 0
-                    preco = dados.get('preco_personalizado', 0.00)
-                    duracao = dados.get('duracao_minutos', 30)
-                    comissao = dados.get('comissao_percentual', 40.00)
+                    preco = parse_decimal(dados.get('preco_personalizado', 0))
+                    duracao = parse_int(dados.get('duracao_minutos', 30), 5, 600)
+                    comissao = parse_decimal(dados.get('comissao_percentual', 40), 0, 100)
+                    if preco is None or duracao is None or comissao is None:
+                        return jsonify({'sucesso': False, 'mensagem': 'Valores inválidos.'}), 400
 
                     cursor.execute("""
                         INSERT INTO barbeiro_servicos (barbeiro_id, servico_id, realiza, preco_personalizado, duracao_minutos, comissao_percentual)
@@ -162,7 +406,9 @@ def gerenciar_comissoes_barbeiro(barbeiro_id):
                     """, (barbeiro_id, item_id, realiza, preco, duracao, comissao))
                 
                 elif tipo == 'produto':
-                    comissao = dados.get('comissao_percentual', 20.00)
+                    comissao = parse_decimal(dados.get('comissao_percentual', 20), 0, 100)
+                    if comissao is None:
+                        return jsonify({'sucesso': False, 'mensagem': 'Comissão inválida.'}), 400
                     cursor.execute("""
                         INSERT INTO barbeiro_produtos (barbeiro_id, produto_id, comissao_percentual)
                         VALUES (%s, %s, %s)
@@ -210,19 +456,19 @@ def gerenciar_comissoes_barbeiro(barbeiro_id):
 @app.route('/api/admin/barbeiro/<int:barbeiro_id>/horarios', methods=['GET', 'POST', 'OPTIONS'])
 @admin_required
 def gerenciar_horarios_barbeiro(barbeiro_id):
-    if request.method == 'OPTIONS':
-        response = jsonify({'sucesso': True})
-        response.headers.add("Access-Control-Allow-Origin", "*")
-        response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
-        response.headers.add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-        return response, 200
-
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
             if request.method == 'POST':
                 dados = request.get_json() or {}
                 dias = dados.get('dias', [])
+                if not isinstance(dias, list) or len(dias) > 7:
+                    return jsonify({'sucesso': False, 'mensagem': 'Lista de dias inválida.'}), 400
+                padroes = {'hora_inicio': '09:00', 'hora_fim': '19:00', 'almoco_inicio': '12:00', 'almoco_fim': '13:00'}
+                for d in dias:
+                    if (not isinstance(d, dict) or parse_int(d.get('dia_semana'), 0, 6) is None
+                            or not all(HORA_RE.match(str(d.get(k, v))) for k, v in padroes.items())):
+                        return jsonify({'sucesso': False, 'mensagem': 'Horário ou dia inválido.'}), 400
                 for d in dias:
                     cursor.execute("""
                         INSERT INTO barbeiro_horarios
@@ -273,42 +519,147 @@ def gerenciar_horarios_barbeiro(barbeiro_id):
         return jsonify({'sucesso': False, 'mensagem': 'Erro interno.'}), 500
     finally:
         conn.close()
+# ==============================================================================
+# PAGAMENTOS — o preço SEMPRE vem do banco; o cliente SEMPRE vem da sessão
+# ==============================================================================
+HASH_FALSO = generate_password_hash("senha-inexistente-para-igualar-o-tempo")
+
+
+def _verificar_senha(usuario, senha):
+    """Confere a senha com hash; gasta o mesmo tempo mesmo se o usuário não existir."""
+    try:
+        if not usuario:
+            check_password_hash(HASH_FALSO, senha)
+            return False
+        return check_password_hash(usuario["senha"], senha)
+    except ValueError:
+        return False
+
+
+def buscar_plano(plano_id=None, nome=None):
+    """Busca um plano ativo do catálogo (fonte única de preço)."""
+    pid = parse_int(plano_id, 1)
+    nome = str(nome).strip() if nome else ""
+    if pid is None and not nome:
+        return None
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            if pid is not None:
+                cursor.execute(
+                    "SELECT id, nome, preco FROM planos_assinatura WHERE id = %s AND (ativo = 1 OR ativo IS NULL)",
+                    (pid,))
+            else:
+                cursor.execute(
+                    "SELECT id, nome, preco FROM planos_assinatura "
+                    "WHERE LOWER(TRIM(nome)) = LOWER(%s) AND (ativo = 1 OR ativo IS NULL)",
+                    (nome,))
+            return cursor.fetchone()
+    finally:
+        conn.close()
+
+
+def cancelar_no_gateway(gw_id):
+    """Cancela a cobrança recorrente no Mercado Pago (melhor esforço)."""
+    if not gw_id:
+        return True
+    try:
+        resp = sdk.preapproval().update(gw_id, {"status": "cancelled"})
+        return resp.get("status") in (200, 201)
+    except Exception as e:
+        app.logger.warning("Falha ao cancelar assinatura %s no gateway: %s", gw_id, e)
+        return False
+
+
+def ativar_por_pagamento(info):
+    """
+    Ativa o plano a partir de um pagamento APROVADO no Mercado Pago.
+    Confere valor pago >= preço do plano e é idempotente (cada pagamento vale uma única vez).
+    """
+    if not info or info.get("status") != "approved":
+        return False
+    meta = info.get("metadata") or {}
+    cliente_id = parse_int(meta.get("cliente_id"), 1)
+    pagamento_id = str(info.get("id") or "")
+    if cliente_id is None or not pagamento_id:
+        return False
+
+    plano = buscar_plano(nome=meta.get("nome_plano"))
+    if not plano:
+        app.logger.warning("Pagamento %s: plano não encontrado", pagamento_id)
+        return False
+    pago = parse_decimal(info.get("transaction_amount"))
+    if pago is None or pago < plano["preco"]:
+        app.logger.warning("Pagamento %s: valor pago (%s) menor que o plano (%s)", pagamento_id, pago, plano["preco"])
+        return False
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            try:
+                cursor.execute(
+                    "INSERT INTO pagamentos_processados (pagamento_id, cliente_id) VALUES (%s, %s)",
+                    (pagamento_id, cliente_id))
+            except pymysql.err.IntegrityError:
+                return True  # já processado antes
+        try:
+            ativar_assinatura_banco(cliente_id, plano["nome"], plano["preco"])
+        except Exception as e:
+            app.logger.error("Falha ao ativar assinatura do pagamento %s: %s", pagamento_id, e)
+            with conn.cursor() as cursor:
+                cursor.execute("DELETE FROM pagamentos_processados WHERE pagamento_id = %s", (pagamento_id,))
+            return False
+        return True
+    finally:
+        conn.close()
+
+
+def validar_assinatura_webhook():
+    """Valida o cabeçalho x-signature enviado pelo Mercado Pago (HMAC-SHA256)."""
+    if not MERCADO_PAGO_WEBHOOK_SECRET:
+        return False
+    x_signature = request.headers.get("x-signature", "")
+    x_request_id = request.headers.get("x-request-id", "")
+    partes = dict(p.strip().split("=", 1) for p in x_signature.split(",") if "=" in p)
+    ts, v1 = partes.get("ts"), partes.get("v1")
+    if not ts or not v1:
+        return False
+    corpo = request.get_json(silent=True) or {}
+    data_id = request.args.get("data.id") or (corpo.get("data") or {}).get("id") or ""
+    manifesto = f"id:{str(data_id).lower()};request-id:{x_request_id};ts:{ts};"
+    esperado = hmac.new(MERCADO_PAGO_WEBHOOK_SECRET.encode("utf-8"), manifesto.encode("utf-8"), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(esperado, v1)
+
+
 @app.route("/api/pagamento/cartao", methods=["POST"])
+@rate_limit(10, 300, "pagamento")
 def processar_pagamento_cartao():
-    dados = request.get_json() or {}
+    cliente_id = session.get("cliente_id")
+    if not cliente_id:
+        return jsonify({"sucesso": False, "mensagem": "Faça login para assinar um plano."}), 401
 
-    valor = float(dados.get("valor", 0.00))
-    nome_plano = dados.get("nome_plano", "Plano Barbearia")
-    cliente_id = dados.get("cliente_id") or session.get("cliente_id")
-    
+    dados = request.get_json(silent=True) or {}
     token_cartao = dados.get("token")
-    payment_method_id = dados.get("payment_method_id")
-    email = dados.get("email")
-    cpf_raw = dados.get("cpf")
+    email = str(dados.get("email") or "").strip()
+    cpf = re.sub(r"\D", "", str(dados.get("cpf") or ""))
 
-    if not token_cartao or not email or not cpf_raw:
-        return jsonify({
-            "sucesso": False, 
-            "mensagem": "Dados de pagamento incompletos. Informe o cartão, e-mail e CPF."
-        }), 400
+    if not token_cartao or not email or not cpf:
+        return jsonify({"sucesso": False, "mensagem": "Dados de pagamento incompletos. Informe o cartão, e-mail e CPF."}), 400
+    if not EMAIL_RE.match(email):
+        return jsonify({"sucesso": False, "mensagem": "E-mail inválido."}), 400
+    if not cpf_valido(cpf):
+        return jsonify({"sucesso": False, "mensagem": "CPF inválido."}), 400
 
-    if valor <= 0:
-        return jsonify({
-            "sucesso": False, 
-            "mensagem": "Valor do pagamento inválido."
-        }), 400
+    # O preço vem do catálogo no servidor; qualquer 'valor' enviado pelo navegador é ignorado
+    plano = buscar_plano(plano_id=dados.get("plano_id"), nome=dados.get("nome_plano"))
+    if not plano:
+        return jsonify({"sucesso": False, "mensagem": "Plano não encontrado."}), 400
+    nome_plano = plano["nome"]
+    valor = float(plano["preco"])
 
-    cpf = re.sub(r"\D", "", str(cpf_raw))
-    if len(cpf) != 11:
-        return jsonify({
-            "sucesso": False, 
-            "mensagem": "CPF inválido."
-        }), 400
-
-    # Payload de Assinatura Recorrente Mensal (Ciclos de 30 dias no Mercado Pago)
     preapproval_data = {
         "payer_email": email,
-        "back_url": "http://127.0.0.1:5000/minha-assinatura",
+        "back_url": f"{PUBLIC_BASE_URL}/minha-assinatura",
         "reason": f"Assinatura {nome_plano} - Barbearia Versati",
         "external_reference": str(cliente_id),
         "auto_recurring": {
@@ -322,12 +673,10 @@ def processar_pagamento_cartao():
     }
 
     try:
-        # Cria a assinatura recorrente no gateway
         preapproval_response = sdk.preapproval().create(preapproval_data)
         response_data = preapproval_response.get("response", {})
         status_sub = response_data.get("status")
 
-        # Status 'authorized' confirma o primeiro desconto no cartão
         if preapproval_response.get("status") in [200, 201] and status_sub == "authorized":
             subscription_id = response_data.get("id")
             data_inicio = datetime.now().date()
@@ -336,22 +685,24 @@ def processar_pagamento_cartao():
             conn = get_db_connection()
             try:
                 with conn.cursor() as cursor:
-                    # Se já existia registro, atualiza com o novo subscription_id
-                    cursor.execute("SELECT id FROM assinaturas WHERE cliente_id = %s", (cliente_id,))
+                    cursor.execute("SELECT id, gateway_subscription_id FROM assinaturas WHERE cliente_id = %s", (cliente_id,))
                     existente = cursor.fetchone()
 
                     if existente:
+                        antigo = existente.get("gateway_subscription_id")
+                        if antigo and antigo != subscription_id:
+                            cancelar_no_gateway(antigo)  # evita cobrança dupla
                         cursor.execute("""
-                            UPDATE assinaturas 
-                            SET nome_plano = %s, preco = %s, status = 'ativo', 
-                                data_inicio = %s, data_renovacao = %s, 
-                                gateway_subscription_id = %s 
+                            UPDATE assinaturas
+                            SET nome_plano = %s, preco = %s, status = 'ativo',
+                                data_inicio = %s, data_renovacao = %s,
+                                gateway_subscription_id = %s
                             WHERE cliente_id = %s
                         """, (nome_plano, valor, data_inicio, data_renovacao, subscription_id, cliente_id))
                     else:
                         cursor.execute("""
-                            INSERT INTO assinaturas 
-                            (cliente_id, nome_plano, preco, status, data_inicio, data_renovacao, gateway_subscription_id) 
+                            INSERT INTO assinaturas
+                            (cliente_id, nome_plano, preco, status, data_inicio, data_renovacao, gateway_subscription_id)
                             VALUES (%s, %s, %s, 'ativo', %s, %s, %s)
                         """, (cliente_id, nome_plano, valor, data_inicio, data_renovacao, subscription_id))
                     conn.commit()
@@ -359,41 +710,46 @@ def processar_pagamento_cartao():
                 conn.close()
 
             return jsonify({
-                "sucesso": True, 
+                "sucesso": True,
                 "mensagem": "Assinatura contratada com sucesso!",
                 "subscription_id": subscription_id,
                 "renovacao": data_renovacao.strftime("%d/%m/%Y")
             }), 200
-        else:
-            return jsonify({
-                "sucesso": False, 
-                "mensagem": "Pagamento recusado pela operadora do cartão.",
-                "detalhes": response_data
-            }), 400
+
+        app.logger.warning("Cartão recusado (cliente %s): %s", cliente_id, response_data.get("status_detail") or response_data.get("message"))
+        return jsonify({"sucesso": False, "mensagem": "Pagamento recusado pela operadora do cartão."}), 400
 
     except Exception as e:
         app.logger.error("Erro em processar_pagamento_cartao: %s", e)
-        return jsonify({"sucesso": False, "mensagem": f"Erro interno: {str(e)}"}), 500
-    
+        return jsonify({"sucesso": False, "mensagem": "Erro interno. Tente novamente."}), 500
+
+
 @app.route('/api/admin/cancelar-assinatura', methods=['POST'])
 @admin_required
 def admin_cancelar_assinatura():
-    dados = request.get_json()
-    assinatura_id = dados.get('assinatura_id')
-    
+    dados = request.get_json(silent=True) or {}
+    assinatura_id = parse_int(dados.get('assinatura_id'), 1)
+
     if not assinatura_id:
         return jsonify({'sucesso': False, 'mensagem': 'ID não informado.'}), 400
-        
+
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            cursor.execute("""
-                UPDATE assinaturas 
-                SET status = 'cancelado' 
-                WHERE id = %s
-            """, (assinatura_id,))
+            cursor.execute("SELECT gateway_subscription_id FROM assinaturas WHERE id = %s", (assinatura_id,))
+            sub = cursor.fetchone()
+            if not sub:
+                return jsonify({'sucesso': False, 'mensagem': 'Assinatura não encontrada.'}), 404
+
+            # Cancela também a cobrança recorrente, senão o cliente continua sendo cobrado
+            gateway_ok = cancelar_no_gateway(sub.get('gateway_subscription_id'))
+            cursor.execute("UPDATE assinaturas SET status = 'cancelado' WHERE id = %s", (assinatura_id,))
             conn.commit()
-            return jsonify({'sucesso': True, 'mensagem': 'Assinatura cancelada com sucesso!'}), 200
+
+            msg = 'Assinatura cancelada com sucesso!'
+            if not gateway_ok:
+                msg += ' Atenção: não foi possível cancelar a cobrança no Mercado Pago; confira no painel deles.'
+            return jsonify({'sucesso': True, 'mensagem': msg}), 200
     except Exception as e:
         conn.rollback()
         app.logger.error("Erro em admin_cancelar_assinatura: %s", e)
@@ -401,44 +757,6 @@ def admin_cancelar_assinatura():
     finally:
         conn.close()
 
-def processar_renovacao_assinatura(cliente_id, cartao_token, valor):
-    url_gateway = "https://api.seugateway.com/v1/cobrancas"
-    payload = {
-        "token_cartao": cartao_token,
-        "valor": valor
-    }
-    
-    try:
-        response = requests.post(url_gateway, json=payload, timeout=10)
-        dados_resposta = response.json()
-        pagamento_aprovado = response.status_code == 200 and dados_resposta.get('status') == 'aprovado'
-    except Exception as e:
-        app.logger.error("Erro de conexão com o gateway: %s", e)
-        pagamento_aprovado = False
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    try:
-        if pagamento_aprovado:
-            cursor.execute("""
-                UPDATE assinaturas 
-                SET status = 'ativo', data_renovacao = DATE_ADD(CURDATE(), INTERVAL 30 DAY) 
-                WHERE cliente_id = %s
-            """, (cliente_id,))
-        else:
-            cursor.execute("""
-                UPDATE assinaturas 
-                SET status = 'inativo' 
-                WHERE cliente_id = %s
-            """, (cliente_id,))
-        
-        conn.commit()
-    except Exception as e:
-        conn.rollback()
-        app.logger.error("Erro ao atualizar banco: %s", e)
-    finally:
-        cursor.close()
-        conn.close()
 
 # ==============================================================================
 # ROTAS DE PLANOS DE ASSINATURA (CATÁLOGO — NOME/PREÇO/DESCRIÇÃO)
@@ -527,7 +845,7 @@ def api_minha_assinatura():
             }), 200
     except Exception as e:
         app.logger.error("Erro detalhado em api_minha_assinatura: %s", str(e))
-        return jsonify({"sucesso": False, "tem_assinatura": False, "mensagem": f"Erro interno: {str(e)}"}), 500
+        return jsonify({"sucesso": False, "tem_assinatura": False, "mensagem": "Erro interno."}), 500
     finally:
         conn.close()
 
@@ -585,11 +903,13 @@ def gerenciar_planos_catalogo():
                 data = request.get_json() or {}
                 nome = (data.get('nome') or '').strip()
                 descricao = (data.get('descricao') or '').strip()
-                preco = data.get('preco', 0)
-                ordem = data.get('ordem', 0)
+                preco = parse_decimal(data.get('preco', 0))
+                ordem = parse_int(data.get('ordem', 0), 0, 10000)
 
                 if not nome:
                     return jsonify({'sucesso': False, 'mensagem': 'Nome obrigatório'}), 400
+                if preco is None or ordem is None or len(nome) > 150 or len(descricao) > 255:
+                    return jsonify({'sucesso': False, 'mensagem': 'Dados inválidos (nome, descrição, preço ou ordem).'}), 400
 
                 # Força explicitamente ativo = 1 na inserção
                 cursor.execute(
@@ -624,12 +944,12 @@ def editar_ou_remover_plano_catalogo(plano_id):
                 return jsonify({'sucesso': True, 'mensagem': 'Plano removido!'}), 200
 
             data = request.get_json() or {}
-            campos = []
-            valores = []
-            for campo in ('nome', 'descricao', 'preco', 'ordem', 'ativo'):
-                if campo in data:
-                    campos.append(f"{campo} = %s")
-                    valores.append(data[campo])
+            campos, valores, invalido = montar_update(data, {
+                'nome': conv_texto(150, obrigatorio=True), 'descricao': conv_texto(255),
+                'preco': conv_decimal(), 'ordem': conv_inteiro(0, 10000), 'ativo': conv_bool,
+            })
+            if invalido:
+                return jsonify({'sucesso': False, 'mensagem': f"Valor inválido para '{invalido}'."}), 400
             if not campos:
                 return jsonify({'sucesso': False, 'mensagem': 'Nada para atualizar.'}), 400
 
@@ -849,6 +1169,12 @@ def api_agendamentos_por_barbeiro(barbeiro_id):
                 else:
                     item["data"] = str(item["data"])
                 
+            if not _token_admin_valido():
+                # Público: apenas os horários ocupados, sem nome/telefone/serviço do cliente
+                agendamentos = [
+                    {"id": a["id"], "data": a["data"], "horario": a["horario"], "status": a["status"]}
+                    for a in agendamentos
+                ]
             return jsonify({"sucesso": True, "agendamentos": agendamentos}), 200
     except Exception as e:
         app.logger.error("Erro em api_agendamentos_por_barbeiro: %s", e)
@@ -934,6 +1260,8 @@ def gerenciar_barbeiros():
 
                 if not nome:
                     return jsonify({'sucesso': False, 'mensagem': 'Nome obrigatório'}), 400
+                if not isinstance(nome, str) or len(nome) > 100 or not validar_foto(foto_url):
+                    return jsonify({'sucesso': False, 'mensagem': 'Nome ou foto inválidos.'}), 400
 
                 cursor.execute(
                     """INSERT INTO barbeiros
@@ -985,6 +1313,9 @@ def editar_barbeiro(barbeiro_id):
             foto_url = (data.get('foto_url') or '').strip()
             exibir_agenda = 1 if data.get('exibir_agenda', True) else 0
             ver_todas_agendas = 1 if data.get('ver_todas_agendas', False) else 0
+
+            if not isinstance(nome, str) or len(nome) > 100 or not validar_foto(foto_url):
+                return jsonify({'sucesso': False, 'mensagem': 'Nome ou foto inválidos.'}), 400
 
             cursor.execute(
                 """UPDATE barbeiros SET
@@ -1055,14 +1386,17 @@ def gerenciar_produtos():
         with conn.cursor() as cursor:
             if request.method == 'POST':
                 data = request.get_json() or {}
-                nome = data.get('nome')
-                descricao = data.get('descricao') or 'Cuidados profissionais'
-                preco = data.get('preco', 0)
-                estoque = data.get('estoque', 0)
-                foto = (data.get('foto') or '').strip() # Captura a foto enviada
+                nome = str(data.get('nome') or '').strip()
+                descricao = str(data.get('descricao') or 'Cuidados profissionais').strip()
+                preco = parse_decimal(data.get('preco', 0))
+                estoque = parse_int(data.get('estoque', 0), 0, 100000)
+                foto = str(data.get('foto') or '').strip()
 
                 if not nome:
                     return jsonify({'sucesso': False, 'mensagem': 'Nome obrigatório'}), 400
+                if (preco is None or estoque is None or len(nome) > 150 or len(descricao) > 255
+                        or not validar_foto(foto)):
+                    return jsonify({'sucesso': False, 'mensagem': 'Dados inválidos (preço, estoque, nome ou foto).'}), 400
 
                 cursor.execute(
                     "INSERT INTO produtos (nome, descricao, preco, estoque, foto) VALUES (%s, %s, %s, %s, %s)",
@@ -1096,12 +1430,13 @@ def editar_ou_remover_produto(produto_id):
                 return jsonify({'sucesso': True, 'mensagem': 'Produto removido!'}), 200
 
             data = request.get_json() or {}
-            campos = []
-            valores = []
-            for campo in ('nome', 'categoria', 'preco', 'estoque'):
-                if campo in data:
-                    campos.append(f"{campo} = %s")
-                    valores.append(data[campo])
+            campos, valores, invalido = montar_update(data, {
+                'nome': conv_texto(150, obrigatorio=True), 'descricao': conv_texto(255),
+                'preco': conv_decimal(), 'estoque': conv_inteiro(0, 100000),
+                'foto': conv_foto, 'ativo': conv_bool,
+            })
+            if invalido:
+                return jsonify({'sucesso': False, 'mensagem': f"Valor inválido para '{invalido}'."}), 400
             if not campos:
                 return jsonify({'sucesso': False, 'mensagem': 'Nada para atualizar.'}), 400
 
@@ -1139,15 +1474,18 @@ def gerenciar_combos():
         with conn.cursor() as cursor:
             if request.method == 'POST':
                 data = request.get_json() or {}
-                nome = data.get('nome')
-                tipo = data.get('tipo', 'servico')
-                descricao = data.get('descricao', '')
-                sessoes = data.get('sessoes', 1)
-                preco = data.get('preco', 0)
-                desconto_percentual = data.get('desconto_percentual', 0)
+                nome = str(data.get('nome') or '').strip()
+                tipo = str(data.get('tipo') or 'servico').strip()
+                descricao = str(data.get('descricao') or '').strip()
+                sessoes = parse_int(data.get('sessoes', 1), 1, 1000)
+                preco = parse_decimal(data.get('preco', 0))
+                desconto_percentual = parse_decimal(data.get('desconto_percentual', 0), 0, 100)
 
                 if not nome:
                     return jsonify({'sucesso': False, 'mensagem': 'Nome obrigatório'}), 400
+                if (sessoes is None or preco is None or desconto_percentual is None or len(nome) > 150
+                        or len(tipo) > 20 or len(descricao) > 255):
+                    return jsonify({'sucesso': False, 'mensagem': 'Dados inválidos do combo.'}), 400
 
                 cursor.execute(
                     """INSERT INTO combos (nome, tipo, descricao, sessoes, preco, desconto_percentual)
@@ -1206,6 +1544,9 @@ def gerenciar_servicos():
 
                 if not nome:
                     return jsonify({'sucesso': False, 'mensagem': 'Nome obrigatório'}), 400
+                preco = parse_decimal(preco)
+                if preco is None or len(nome) > 150 or len(categoria) > 80 or not validar_foto(foto):
+                    return jsonify({'sucesso': False, 'mensagem': 'Dados inválidos (preço, nome ou foto).'}), 400
 
                 cursor.execute(
                     """INSERT INTO servicos (nome, preco, categoria, foto) VALUES (%s, %s, %s, %s)
@@ -1226,59 +1567,57 @@ def gerenciar_servicos():
         conn.close()
 
 @app.route("/api/pagamento/pix", methods=["POST"])
+@rate_limit(10, 300, "pagamento")
 def processar_pagamento_pix():
-    dados = request.get_json() or {}
+    cliente_id = session.get("cliente_id")
+    if not cliente_id:
+        return jsonify({"sucesso": False, "mensagem": "Faça login para assinar um plano."}), 401
 
-    valor = float(dados.get("valor", 0.00))
-    nome_plano = dados.get("nome_plano", "Plano Barbearia")
-    cliente_id = dados.get("cliente_id") or session.get("cliente_id")
-    
-    # Dados obrigatórios vindos do frontend (sem valores fake hardcoded)
-    email = dados.get("email")
-    cpf_raw = dados.get("cpf")
-    nome = dados.get("nome", "Cliente")
+    dados = request.get_json(silent=True) or {}
+    email = str(dados.get("email") or "").strip()
+    cpf = re.sub(r"\D", "", str(dados.get("cpf") or ""))
+    nome = str(dados.get("nome") or "Cliente").strip()[:60]
 
-    if not email or not cpf_raw:
-        return jsonify({
-            "sucesso": False,
-            "mensagem": "E-mail e CPF são obrigatórios para gerar o PIX."
-        }), 400
+    if not email or not cpf:
+        return jsonify({"sucesso": False, "mensagem": "E-mail e CPF são obrigatórios para gerar o PIX."}), 400
+    if not EMAIL_RE.match(email):
+        return jsonify({"sucesso": False, "mensagem": "E-mail inválido."}), 400
+    if not cpf_valido(cpf):
+        return jsonify({"sucesso": False, "mensagem": "CPF inválido."}), 400
 
-    if valor <= 0:
-        return jsonify({
-            "sucesso": False,
-            "mensagem": "Valor do pagamento inválido."
-        }), 400
-
-    cpf = re.sub(r"\D", "", str(cpf_raw))
-    if len(cpf) != 11:
-        return jsonify({
-            "sucesso": False,
-            "mensagem": "CPF inválido."
-        }), 400
+    # O preço vem do catálogo no servidor; qualquer 'valor' enviado pelo navegador é ignorado
+    plano = buscar_plano(plano_id=dados.get("plano_id"), nome=dados.get("nome_plano"))
+    if not plano:
+        return jsonify({"sucesso": False, "mensagem": "Plano não encontrado."}), 400
+    nome_plano = plano["nome"]
+    valor = float(plano["preco"])
 
     payment_data = {
         "transaction_amount": valor,
         "description": f"Assinatura {nome_plano} - Barbearia Versati",
         "payment_method_id": "pix",
+        "external_reference": str(cliente_id),
         "payer": {
             "email": email,
             "first_name": nome,
             "identification": {"type": "CPF", "number": cpf},
         },
         "metadata": {
-            "cliente_id": cliente_id,
+            "cliente_id": int(cliente_id),
             "nome_plano": nome_plano,
             "preco": valor,
         },
     }
+    if PUBLIC_BASE_URL.startswith("https://"):
+        payment_data["notification_url"] = f"{PUBLIC_BASE_URL}/api/webhook"
 
     try:
         payment_response = sdk.payment().create(payment_data)
         payment = payment_response.get("response", {})
 
         if payment_response.get("status") not in [200, 201]:
-            return jsonify({"sucesso": False, "mensagem": "Erro Mercado Pago", "detalhes": payment}), 400
+            app.logger.warning("Mercado Pago recusou a criação do PIX: %s", payment.get("message"))
+            return jsonify({"sucesso": False, "mensagem": "Não foi possível gerar o PIX. Tente novamente."}), 400
 
         poi = payment.get("point_of_interaction", {}) or {}
         trans_data = poi.get("transaction_data", {}) or {}
@@ -1297,11 +1636,19 @@ def processar_pagamento_pix():
 
 @app.route("/api/pagamento/status/<int:pagamento_id>", methods=["GET"])
 def verificar_status_pagamento(pagamento_id):
+    cliente_id = session.get("cliente_id")
+    if not cliente_id:
+        return jsonify({"sucesso": False, "mensagem": "Não autenticado"}), 401
     try:
-        payment_response = sdk.payment().get(pagamento_id)
-        payment = payment_response.get("response", {})
+        payment = sdk.payment().get(pagamento_id).get("response", {}) or {}
+        # Só o dono do pagamento pode consultá-lo
+        if str((payment.get("metadata") or {}).get("cliente_id")) != str(cliente_id):
+            return jsonify({"sucesso": False, "mensagem": "Pagamento não encontrado."}), 404
+
         status_atual = payment.get("status")
-        
+        if status_atual == "approved":
+            ativar_por_pagamento(payment)  # idempotente: ativa o plano uma única vez
+
         return jsonify({
             "sucesso": True,
             "status": status_atual,
@@ -1315,46 +1662,49 @@ def verificar_status_pagamento(pagamento_id):
 
 @app.route("/api/webhook", methods=["POST"])
 def webhook_mercadopago():
-    dados = request.get_json() or {}
+    if not validar_assinatura_webhook():
+        app.logger.warning("Webhook rejeitado: assinatura inválida (ip=%s)", request.remote_addr)
+        return jsonify({"status": "unauthorized"}), 401
+
+    dados = request.get_json(silent=True) or {}
     tipo_evento = request.args.get("type") or request.args.get("topic") or dados.get("type")
-    data_id = request.args.get("data.id") or dados.get("data", {}).get("id")
+    data_id = request.args.get("data.id") or (dados.get("data") or {}).get("id")
 
     try:
-        # Quando uma mensalidade de recorrência é cobrada com sucesso
-        if tipo_evento in ["subscription_authorized_payment", "payment"] and data_id:
-            info = sdk.payment().get(data_id).get("response", {})
+        # Mensalidade recorrente cobrada ou pagamento avulso (Pix) aprovado
+        if tipo_evento in ["subscription_authorized_payment", "payment"] and data_id and str(data_id).isdigit():
+            info = sdk.payment().get(data_id).get("response", {}) or {}
             if info.get("status") == "approved":
-                # Verifica se é cobrança de assinatura pelo preapproval_id
-                preapproval_id = info.get("order", {}).get("id") or info.get("subscription_id")
-                
+                preapproval_id = (info.get("order") or {}).get("id") or info.get("subscription_id")
+
                 if preapproval_id:
                     conn = get_db_connection()
                     try:
                         with conn.cursor() as cursor:
                             cursor.execute("""
-                                UPDATE assinaturas 
-                                SET status = 'ativo', 
-                                    data_renovacao = DATE_ADD(CURDATE(), INTERVAL 30 DAY) 
+                                UPDATE assinaturas
+                                SET status = 'ativo',
+                                    data_renovacao = DATE_ADD(CURDATE(), INTERVAL 30 DAY)
                                 WHERE gateway_subscription_id = %s
                             """, (preapproval_id,))
                             conn.commit()
                     finally:
                         conn.close()
+                else:
+                    ativar_por_pagamento(info)
 
-        # Quando a assinatura é pausada, cancelada ou falha por falta de limite
+        # Assinatura pausada ou cancelada
         elif tipo_evento in ["subscription_preapproval", "preapproval"] and data_id:
-            sub_info = sdk.preapproval().get(data_id).get("response", {})
-            sub_status = sub_info.get("status")
-
-            if sub_status in ["cancelled", "paused"]:
+            sub_info = sdk.preapproval().get(data_id).get("response", {}) or {}
+            if sub_info.get("status") in ["cancelled", "paused"]:
                 conn = get_db_connection()
                 try:
                     with conn.cursor() as cursor:
                         cursor.execute("""
-                            UPDATE assinaturas 
-                            SET status = 'cancelado' 
+                            UPDATE assinaturas
+                            SET status = 'cancelado'
                             WHERE gateway_subscription_id = %s
-                        """, (data_id,))
+                        """, (str(data_id),))
                         conn.commit()
                 finally:
                     conn.close()
@@ -1398,10 +1748,11 @@ def cancelar_assinatura_cliente(assinatura_id):
         conn.close()
 
 @app.route("/api/login", methods=["POST"])
+@rate_limit(10, 300, "login-api")
 def api_login():
-    dados = request.get_json() or {}
-    email = dados.get("email")
-    senha = dados.get("senha")
+    dados = request.get_json(silent=True) or {}
+    email = str(dados.get("email") or "").strip()
+    senha = str(dados.get("senha") or "")
 
     if not email or not senha:
         return jsonify({"sucesso": False, "mensagem": "E-mail e senha obrigatórios!"}), 400
@@ -1414,8 +1765,7 @@ def api_login():
     finally:
         conn.close()
 
-    # Compara a senha digitada com o hash salvo no banco (nunca em texto plano)
-    if usuario and check_password_hash(usuario["senha"], senha):
+    if _verificar_senha(usuario, senha):
         return jsonify({
             "sucesso": True,
             "mensagem": "Login realizado com sucesso!",
@@ -1426,48 +1776,35 @@ def api_login():
 
 
 @app.route("/api/cadastro", methods=["POST"])
+@rate_limit(10, 3600, "cadastro-api")
 def api_cadastro():
-    dados = request.get_json() or {}
-    nome = dados.get("nome", "").strip()
-    email = dados.get("email", "").strip()
-    senha = dados.get("senha", "") # Senha em texto limpo digitada pelo utilizador
-    telefone = dados.get("telefone", "").strip()
+    dados = request.get_json(silent=True) or {}
+    nome = str(dados.get("nome") or "").strip()
+    email = str(dados.get("email") or "").strip()
+    senha = str(dados.get("senha") or "")
+    telefone = str(dados.get("telefone") or "").strip()
 
-    if not nome or not email or not senha:
-        return jsonify({"sucesso": False, "mensagem": "Preencha todos os campos obrigatórios!"}), 400
+    erro = validar_cadastro(nome, email, senha, telefone)
+    if erro:
+        return jsonify({"sucesso": False, "mensagem": erro}), 400
 
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
             cursor.execute(
                 "INSERT INTO usuarios (nome, email, senha, telefone) VALUES (%s, %s, %s, %s)",
-                (nome, email, senha, telefone) # Guarda a senha diretamente sem hash
+                (nome, email, generate_password_hash(senha), telefone)
             )
             conn.commit()
         return jsonify({"sucesso": True, "mensagem": "Cadastro realizado com sucesso!"}), 201
-    except Exception:
+    except pymysql.err.IntegrityError:
         return jsonify({"sucesso": False, "mensagem": "E-mail já cadastrado!"}), 400
-    finally:
-        conn.close()
-@app.route('/api/admin/usuario/<int:usuario_id>/senha', methods=['GET'])
-@admin_required
-def ver_senha_usuario(usuario_id):
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT id, nome, senha FROM usuarios WHERE id = %s", (usuario_id,))
-            usuario = cursor.fetchone()
-            
-            if not usuario:
-                return jsonify({'sucesso': False, 'mensagem': 'Usuário não encontrado'}), 404
-            
-            # Retorna a senha cadastrada
-            return jsonify({'sucesso': True, 'senha': usuario['senha']}), 200
     except Exception as e:
-        app.logger.error("Erro em ver_senha_usuario: %s", e)
-        return jsonify({'sucesso': False, 'mensagem': 'Erro interno. Tente novamente.'}), 500
+        app.logger.error("Erro em api_cadastro: %s", e)
+        return jsonify({"sucesso": False, "mensagem": "Erro interno. Tente novamente."}), 500
     finally:
         conn.close()
+
 
 @app.route("/api/admin/usuarios", methods=["GET", "OPTIONS"])
 @admin_required
@@ -1501,6 +1838,11 @@ def api_admin_deletar_usuario(usuario_id):
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT gateway_subscription_id FROM assinaturas "
+                "WHERE cliente_id = %s AND gateway_subscription_id IS NOT NULL", (usuario_id,))
+            for sub in cursor.fetchall():
+                cancelar_no_gateway(sub["gateway_subscription_id"])
             cursor.execute("DELETE FROM agendamentos WHERE cliente_id = %s", (usuario_id,))
             try:
                 cursor.execute("DELETE FROM assinaturas WHERE cliente_id = %s", (usuario_id,))
@@ -1525,22 +1867,25 @@ def api_admin_deletar_usuario(usuario_id):
 @app.route("/api/admin/resetar-senha", methods=["POST"])
 @admin_required
 def api_admin_resetar_senha():
-    dados = request.get_json() or {}
-    usuario_id = dados.get('usuario_id')
-    nova_senha = dados.get('nova_senha')
+    dados = request.get_json(silent=True) or {}
+    usuario_id = parse_int(dados.get('usuario_id'), 1)
+    nova_senha = str(dados.get('nova_senha') or "")
 
     if not usuario_id or not nova_senha:
         return jsonify({'sucesso': False, 'mensagem': 'Dados incompletos.'}), 400
+    if not (8 <= len(nova_senha) <= 128):
+        return jsonify({'sucesso': False, 'mensagem': 'A senha deve ter entre 8 e 128 caracteres.'}), 400
 
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            # Atualiza guardando a nova senha em texto limpo
-            cursor.execute("UPDATE usuarios SET senha = %s WHERE id = %s", (nova_senha, usuario_id))
+            cursor.execute("UPDATE usuarios SET senha = %s WHERE id = %s", (generate_password_hash(nova_senha), usuario_id))
             conn.commit()
+            if cursor.rowcount == 0:
+                return jsonify({'sucesso': False, 'mensagem': 'Usuário não encontrado.'}), 404
         return jsonify({'sucesso': True, 'mensagem': 'Senha alterada com sucesso!'}), 200
     except Exception as e:
-        conn.rollback()
+        app.logger.error("Erro em api_admin_resetar_senha: %s", e)
         return jsonify({'sucesso': False, 'mensagem': 'Erro ao alterar senha.'}), 500
     finally:
         conn.close()
@@ -1790,6 +2135,9 @@ def atualizar_status_agendamento(id):
     novo_status = data.get("status")
     if not novo_status:
         return jsonify({"sucesso": False, "mensagem": "Status obrigatório."}), 400
+    novo_status = str(novo_status).strip()
+    if not STATUS_RE.match(novo_status):
+        return jsonify({"sucesso": False, "mensagem": "Status inválido."}), 400
 
     conn = get_db_connection()
     try:
@@ -1837,8 +2185,11 @@ def checkout_plano():
     if "cliente_id" not in session:
         return redirect(url_for("login"))
     
-    nome_plano = request.args.get("plano", "Plano Barbearia")
-    preco = request.args.get("preco", "0.00")
+    plano = buscar_plano(plano_id=request.args.get("plano_id"), nome=request.args.get("plano"))
+    if not plano:
+        return redirect(url_for("pagina_planos"))
+    nome_plano = plano["nome"]
+    preco = f"{plano['preco']:.2f}"  # o preço do navegador (?preco=) é ignorado
     
     return render_template("checkout_plano.html", plano=nome_plano, preco=preco)
 
@@ -1926,7 +2277,7 @@ def admin_planos_ativos():
             return jsonify({'sucesso': True, 'planos': planos}), 200
     except Exception as e:
         app.logger.error("Erro crítico em admin_planos_ativos: %s", str(e))
-        return jsonify({'sucesso': False, 'planos': [], 'mensagem': f'Erro interno: {str(e)}'}), 500
+        return jsonify({'sucesso': False, 'planos': [], 'mensagem': 'Erro interno.'}), 500
     finally:
         conn.close()
 @app.route('/api/admin/cobrar-assinatura', methods=['POST'])
@@ -1989,52 +2340,30 @@ def admin_cobrar_assinatura():
         conn.close()
 
 @app.route("/api/assinaturas/assinar", methods=["POST"])
+@rate_limit(20, 300, "assinar")
 def assinar_plano():
-    """Ativa ou renova a assinatura com validade de 30 dias."""
-    data = request.get_json() or {}
-    cliente_id = data.get("cliente_id") or session.get("cliente_id")
-    nome_plano = data.get("nome_plano")
-    preco = data.get("preco", 0.00)
+    """Confirma a assinatura SOMENTE depois de um pagamento aprovado e pertencente ao cliente logado."""
+    cliente_id = session.get("cliente_id")
+    if not cliente_id:
+        return jsonify({"sucesso": False, "mensagem": "Não autenticado"}), 401
 
-    if not cliente_id or not nome_plano:
-        return jsonify({"sucesso": False, "mensagem": "Dados incompletos."}), 400
+    dados = request.get_json(silent=True) or {}
+    pagamento_id = parse_int(dados.get("pagamento_id"), 1, 10**15)
+    if not pagamento_id:
+        return jsonify({"sucesso": False, "mensagem": "Pagamento não informado."}), 400
 
-    data_inicio = datetime.now().date()
-    data_renovacao = data_inicio + timedelta(days=30)
-    data_renovacao_fmt = data_renovacao.strftime("%d/%m/%Y")
-
-    conn = get_db_connection()
     try:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT id FROM assinaturas WHERE cliente_id = %s", (cliente_id,))
-            existente = cursor.fetchone()
-
-            if existente:
-                cursor.execute("""
-                    UPDATE assinaturas 
-                    SET nome_plano = %s, preco = %s, status = 'ativo', 
-                        data_inicio = %s, data_renovacao = %s 
-                    WHERE cliente_id = %s
-                """, (nome_plano, preco, data_inicio, data_renovacao, cliente_id))
-            else:
-                cursor.execute("""
-                    INSERT INTO assinaturas (cliente_id, nome_plano, preco, status, data_inicio, data_renovacao) 
-                    VALUES (%s, %s, %s, 'ativo', %s, %s)
-                """, (cliente_id, nome_plano, preco, data_inicio, data_renovacao))
-            
-            conn.commit()
-
-        return jsonify({
-            "sucesso": True, 
-            "mensagem": "Assinatura ativada com sucesso!",
-            "renovacao": data_renovacao_fmt
-        }), 200
+        info = sdk.payment().get(pagamento_id).get("response", {}) or {}
+        if str((info.get("metadata") or {}).get("cliente_id")) != str(cliente_id):
+            return jsonify({"sucesso": False, "mensagem": "Pagamento não encontrado."}), 404
+        if not ativar_por_pagamento(info):
+            return jsonify({"sucesso": False, "mensagem": "Pagamento ainda não aprovado."}), 402
     except Exception as e:
-        conn.rollback()
         app.logger.error("Erro em assinar_plano: %s", e)
         return jsonify({"sucesso": False, "mensagem": "Erro interno ao processar assinatura."}), 500
-    finally:
-        conn.close()
+
+    renovacao = (datetime.now().date() + timedelta(days=30)).strftime("%d/%m/%Y")
+    return jsonify({"sucesso": True, "mensagem": "Assinatura ativada com sucesso!", "renovacao": renovacao}), 200
 
 
 @app.route("/cancelar-agendamento/<int:id>", methods=["POST"])
@@ -2063,6 +2392,7 @@ def home():
 
 
 @app.route("/login", methods=["GET", "POST"])
+@rate_limit(10, 300, "login-web")
 def login():
     erro = None
     if request.method == "POST":
@@ -2077,7 +2407,9 @@ def login():
         finally:
             conn.close()
 
-        if usuario and check_password_hash(usuario["senha"], senha):
+        if _verificar_senha(usuario, senha or ""):
+            session.clear()  # evita fixação de sessão
+            session.permanent = True
             session["cliente_id"] = usuario["id"]
             session["cliente_nome"] = usuario["nome"]
             return redirect(url_for("home"))
@@ -2087,6 +2419,7 @@ def login():
 
 
 @app.route("/cadastro", methods=["GET", "POST"])
+@rate_limit(10, 3600, "cadastro-web")
 def cadastro():
     erro = None
     if request.method == "POST":
@@ -2095,8 +2428,8 @@ def cadastro():
         senha = request.form.get("senha", "")
         telefone = request.form.get("telefone", "").strip()
 
-        if not nome or not email or not senha:
-            erro = "Preencha todos os campos obrigatórios."
+        erro = validar_cadastro(nome, email, senha, telefone)
+        if erro:
             return render_template("cadastro.html", erro=erro)
 
         senha_hash = generate_password_hash(senha)
@@ -2136,21 +2469,27 @@ def agendar():
 
     erro = None
     if request.method == "POST":
-        cliente_telefone = request.form.get("cliente_telefone", "").strip()
-        barbeiro_id_str = request.form.get("barbeiro_id")
-        data = request.form.get("data")
-        horario = request.form.get("horario")
-        servico = request.form.get("servico")
-        tipo_pagamento = request.form.get("tipo_pagamento", "presencial")
+        cliente_telefone = (request.form.get("cliente_telefone") or "").strip()
+        barbeiro_id = parse_int(request.form.get("barbeiro_id"), 1)
+        data = (request.form.get("data") or "").strip()
+        horario = (request.form.get("horario") or "").strip()
+        servico = (request.form.get("servico") or "").strip()
+        tipo_pagamento = (request.form.get("tipo_pagamento") or "presencial").strip().lower()
+        if tipo_pagamento not in TIPOS_PAGAMENTO:
+            tipo_pagamento = "presencial"
 
         try:
-            barbeiro_id = int(barbeiro_id_str)
-        except (TypeError, ValueError):
-            barbeiro_id = 1
+            momento = datetime.strptime(f"{data} {horario}", "%Y-%m-%d %H:%M")
+        except ValueError:
+            momento = None
 
-        tem_assinatura_atual = cliente_tem_assinatura_ativa(cliente_id)
-
-        if tipo_pagamento in ["plano", "vip"] and not tem_assinatura_atual:
+        if not TELEFONE_RE.match(cliente_telefone):
+            erro = "Telefone inválido."
+        elif barbeiro_id is None or not servico or len(servico) > 100:
+            erro = "Escolha o profissional e o serviço."
+        elif momento is None or horario not in HORARIOS_VALIDOS or momento < datetime.now():
+            erro = "Data ou horário inválido."
+        elif tipo_pagamento in ["plano", "vip"] and not cliente_tem_assinatura_ativa(cliente_id):
             erro = "Você não possui uma assinatura ativa para usar esta opção de pagamento."
         else:
             conn = get_db_connection()
@@ -2158,32 +2497,41 @@ def agendar():
                 with conn.cursor() as cursor:
                     cursor.execute("SELECT nome FROM barbeiros WHERE id = %s", (barbeiro_id,))
                     barb = cursor.fetchone()
-                    profissional_nome = barb['nome'] if barb else "Willian Bruno"
-
                     cursor.execute("SELECT preco FROM servicos WHERE LOWER(TRIM(nome)) = LOWER(TRIM(%s))", (servico,))
                     serv_db = cursor.fetchone()
-                    preco_servico = float(serv_db['preco']) if serv_db else 35.00
 
-                    if tipo_pagamento in ["plano", "vip"]:
-                        preco_servico = 0.00
-
-                    cursor.execute(
-                        "SELECT id FROM agendamentos WHERE barbeiro_id = %s AND data = %s AND horario = %s AND status != 'cancelado'",
-                        (barbeiro_id, data, horario)
-                    )
-                    if cursor.fetchone():
-                        erro = "Este horário já está ocupado com este profissional!"
+                    if not barb or not serv_db:
+                        erro = "Profissional ou serviço não encontrado."
                     else:
+                        profissional_nome = barb['nome']
+                        preco_servico = 0.00 if tipo_pagamento in ["plano", "vip"] else float(serv_db['preco'])
+
+                        # Libera o horário de um agendamento cancelado (a UNIQUE KEY o manteria bloqueado)
                         cursor.execute(
-                            """
-                            INSERT INTO agendamentos 
-                            (cliente_id, barbeiro_id, profissional, data, horario, servico, tipo_pagamento, cliente_telefone, preco) 
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                            """,
-                            (cliente_id, barbeiro_id, profissional_nome, data, horario, servico, tipo_pagamento, cliente_telefone, preco_servico)
+                            "DELETE FROM agendamentos WHERE barbeiro_id = %s AND data = %s AND horario = %s "
+                            "AND LOWER(status) = 'cancelado'",
+                            (barbeiro_id, data, horario)
                         )
-                        conn.commit()
-                        return redirect(url_for("meus_agendamentos"))
+                        cursor.execute(
+                            "SELECT id FROM agendamentos WHERE barbeiro_id = %s AND data = %s AND horario = %s AND status != 'cancelado'",
+                            (barbeiro_id, data, horario)
+                        )
+                        if cursor.fetchone():
+                            erro = "Este horário já está ocupado com este profissional!"
+                        else:
+                            try:
+                                cursor.execute(
+                                    """
+                                    INSERT INTO agendamentos
+                                    (cliente_id, barbeiro_id, profissional, data, horario, servico, tipo_pagamento, cliente_telefone, preco)
+                                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                    """,
+                                    (cliente_id, barbeiro_id, profissional_nome, data, horario, servico, tipo_pagamento, cliente_telefone, preco_servico)
+                                )
+                                conn.commit()
+                                return redirect(url_for("meus_agendamentos"))
+                            except pymysql.err.IntegrityError:
+                                erro = "Este horário já está ocupado com este profissional!"
             finally:
                 conn.close()
 
@@ -2266,8 +2614,14 @@ def api_cliente_agendamentos():
         conn.close()
 @app.route("/api/horarios-disponiveis")
 def horarios_disponiveis():
-    barbeiro_id = request.args.get("barbeiro_id", "1")
-    data = request.args.get("data")
+    barbeiro_id = parse_int(request.args.get("barbeiro_id", "1"), 1)
+    data = request.args.get("data", "")
+    try:
+        datetime.strptime(data, "%Y-%m-%d")
+    except ValueError:
+        return jsonify([])
+    if barbeiro_id is None:
+        return jsonify([])
 
     todos_horarios = []
     for hora in range(9, 20):
@@ -2312,6 +2666,16 @@ def internal_error(error):
         "mensagem": "Erro interno no servidor. Tente novamente mais tarde."
     }), 500
 
+@app.errorhandler(413)
+def payload_grande(error):
+    return jsonify({"sucesso": False, "mensagem": "Arquivo ou requisição grande demais."}), 413
+
+
+@app.errorhandler(405)
+def metodo_nao_permitido(error):
+    return jsonify({"sucesso": False, "mensagem": "Método não permitido."}), 405
+
+
 @app.errorhandler(404)
 def not_found_error(error):
     return jsonify({
@@ -2321,6 +2685,6 @@ def not_found_error(error):
 
 
 if __name__ == "__main__":
-    debug_mode = os.environ.get("FLASK_DEBUG", "False").lower() == "true"
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", debug=debug_mode, port=port)
+    # Em produção use Gunicorn/Waitress atrás de HTTPS; aqui só escuta em 127.0.0.1 por padrão
+    app.run(host=os.environ.get("HOST", "127.0.0.1"), debug=DEBUG_MODE, port=port)

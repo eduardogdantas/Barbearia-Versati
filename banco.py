@@ -42,12 +42,11 @@ def _obter_configuracao_conexao():
         "ssl_mode": None
     }
 
-_cfg = _obter_configuracao_conexao()
-DB_HOST = _cfg["host"]
-DB_USER = _cfg["user"]
-DB_PASSWORD = _cfg["password"]
-DB_NAME = _cfg["database"]
-DB_PORT = _cfg["port"]
+DB_HOST = os.environ.get("DB_HOST", "https://barbearia-versati.onrender.com")
+DB_PORT = int(os.environ.get("DB_PORT", "22362"))
+DB_USER = os.environ.get("DB_USER", "root")
+DB_PASSWORD = os.environ.get("DB_PASSWORD", "")
+DB_NAME = os.environ.get("DB_DATABASE", "defaultdb")
 DB_SSL_CA = os.environ.get("DB_SSL_CA")
 
 if not re.fullmatch(r"[A-Za-z0-9_]+", DB_NAME):
@@ -68,17 +67,14 @@ def _ssl_context():
 
 def _conectar(com_banco=True):
     kwargs = dict(
-        host=DB_HOST,
-        user=DB_USER,
-        password=DB_PASSWORD,
-        port=DB_PORT,
-        cursorclass=pymysql.cursors.DictCursor,
-        autocommit=True,
-        ssl=_ssl_context(),
-        connect_timeout=15,
-        read_timeout=30,
-        write_timeout=30,
-    )
+    host=DB_HOST,
+    port=DB_PORT,
+    user=DB_USER,
+    password=DB_PASSWORD,
+    database=DB_NAME,
+    ssl={"ca": DB_SSL_CA} if DB_SSL_CA else {"ssl": {}},
+    # mantenha o que você já tinha (cursorclass, charset etc.)
+)
     if com_banco:
         kwargs["database"] = DB_NAME
     return pymysql.connect(**kwargs)

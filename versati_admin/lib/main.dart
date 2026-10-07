@@ -13,7 +13,7 @@ class AppConfig {
   static const String apiUrl = '$baseUrl/api';
   static const String adminToken = 'token_secreto_para_proteger_o_flutter'; 
 
-  // Helper centralizado para injetar o token de segurança nas requisições admin
+  // Helper centralizado para injetar o token de segurança nas requisições admin/
   static Map<String, String> get adminHeaders => {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $adminToken',
