@@ -11,7 +11,7 @@ import 'dart:typed_data';
 class AppConfig {
   static const String baseUrl = 'https://barbearia-versati.onrender.com'; // Substitua pelo endereço do seu servidor
   static const String apiUrl = '$baseUrl/api';
-  static const String adminToken = 'token_secreto_para_proteger_o_flutter'; 
+  static const String adminToken = 'DpYz9KSv64O3_Mk7Zx2sSwfFqP6VOp1Pf2N2o5FTiI8'; 
 
   // Helper centralizado para injetar o token de segurança nas requisições admin/
   static Map<String, String> get adminHeaders => {
