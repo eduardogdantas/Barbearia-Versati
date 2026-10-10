@@ -42,7 +42,7 @@ def _obter_configuracao_conexao():
         "ssl_mode": None
     }
 
-DB_HOST = os.environ.get("DB_HOST", "https://barbearia-versati.onrender.com")
+DB_HOST = os.environ.get("DB_HOST", "localhost")
 DB_PORT = int(os.environ.get("DB_PORT", "22362"))
 DB_USER = os.environ.get("DB_USER", "root")
 DB_PASSWORD = os.environ.get("DB_PASSWORD", "")
