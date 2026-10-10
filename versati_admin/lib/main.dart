@@ -1043,7 +1043,7 @@ class _FinanceiroViewState extends State<FinanceiroView> {
 
   Future<void> carregarDados({bool manual = false}) async {
     if (manual && mounted) setState(() => _isLoading = true);
-
+    _finalizados.clear();
     try {
       final response = await http.get(Uri.parse(_apiUrl), headers: AppConfig.adminHeaders);
       if (response.statusCode == 200) {
