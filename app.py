@@ -1344,7 +1344,17 @@ def deletar_barbeiro(barbeiro_id):
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
+            # Pega o nome do barbeiro antes de deletar para limpar agendamentos pendentes/concluídos se necessário
+            cursor.execute("SELECT nome FROM barbeiros WHERE id = %s", (barbeiro_id,))
+            barb = cursor.fetchone()
+
+            # Deleta o barbeiro
             cursor.execute("DELETE FROM barbeiros WHERE id = %s", (barbeiro_id,))
+
+            # Opcional: Se quiser limpar os agendamentos órfãos automaticamente ao deletar o barbeiro:
+            if barb:
+                cursor.execute("DELETE FROM agendamentos WHERE barbeiro_id = %s OR profissional = %s", (barbeiro_id, barb['nome']))
+
             conn.commit()
             return jsonify({'sucesso': True, 'mensagem': 'Removido com sucesso!'}), 200
     except Exception as e:

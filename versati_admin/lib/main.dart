@@ -502,6 +502,7 @@ class _MainMultiTaskScreenState extends State<MainMultiTaskScreen> {
               icon: const Icon(Icons.refresh, color: Colors.white),
               tooltip: 'Atualizar Dados',
               onPressed: () {
+                setState(() {});
                 _financeiroKey.currentState?.carregarDados(manual: true);
               },
             ),
@@ -899,11 +900,12 @@ class _FinanceiroViewState extends State<FinanceiroView> {
       "${x.year}-${x.month.toString().padLeft(2, '0')}-${x.day.toString().padLeft(2, '0')}";
 
   String get _apiUrl {
-    final params = <String, String>{};
+    final params = <String, String>{
+      't': DateTime.now().millisecondsSinceEpoch.toString(), // Garante que a URL muda e evita cache
+    };
     if (_dataFiltro != null) params['data'] = _fmtApi(_dataFiltro!);
     if (_dataSemana != null) params['semana'] = _fmtApi(_dataSemana!);
     if (_dataMes != null) params['mes'] = _fmtApi(_dataMes!);
-    if (params.isEmpty) return _apiUrlBase;
     return Uri.parse(_apiUrlBase).replace(queryParameters: params).toString();
   }
 
