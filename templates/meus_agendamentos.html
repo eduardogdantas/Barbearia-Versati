@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Barbearia — Meus Agendamentos</title>
+    <link rel="icon" type="image/jpeg" href="{{ url_for('static', filename='img/Logo_Barbearia_Versati.jpeg') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #000000;
+            --bg-card: #141414;
+            --stroke: #2b2b2b;
+            --text: #f5f5f3;
+            --text-dim: #9a9a97;
+            --brass: #d81f2c;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Work Sans', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 20px;
+        }
+        .container {
+            max-width: 650px;
+            width: 100%;
+            text-align: center;
+        }
+        h1 {
+            font-family: 'Anton', sans-serif;
+            font-size: 2.5rem;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            letter-spacing: 0.03em;
+        }
+        p.subtitle { 
+            color: var(--text-dim); 
+            margin-bottom: 30px; 
+            font-size: 1rem; 
+        }
+        .agendamento-card {
+            background: var(--bg-card);
+            border: 1px solid var(--stroke);
+            border-radius: 12px;
+            padding: 20px 24px;
+            margin-bottom: 16px;
+            text-align: left;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 15px;
+        }
+        .info-detalhe h3 {
+            font-family: 'Anton', sans-serif;
+            font-size: 1.2rem;
+            color: var(--text);
+            margin-bottom: 6px;
+            letter-spacing: 0.02em;
+        }
+        .info-detalhe p {
+            color: var(--text-dim);
+            font-size: 0.9rem;
+            margin-bottom: 4px;
+        }
+        .lado-direito {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .data-badge {
+            background: rgba(216, 31, 44, 0.15);
+            border: 1px solid var(--brass);
+            color: var(--brass);
+            padding: 10px 16px;
+            border-radius: 8px;
+            text-align: center;
+            font-family: 'Anton', sans-serif;
+        }
+        .data-badge .dia { font-size: 1.1rem; }
+        .data-badge .hora { font-size: 0.9rem; }
+        
+        .btn-cancelar {
+            background: transparent;
+            color: var(--brass);
+            border: 1px solid var(--brass);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-family: 'Anton', sans-serif;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+        }
+        .btn-cancelar:hover {
+            background: var(--brass);
+            color: #fff;
+        }
+
+        .sem-agendamento {
+            color: var(--text-dim);
+            background: var(--bg-card);
+            border: 1px solid var(--stroke);
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+        .btn-voltar {
+            background: transparent;
+            color: var(--text);
+            border: 1px solid var(--stroke);
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-family: 'Anton', sans-serif;
+            font-size: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            margin-top: 20px;
+            transition: border-color 0.2s;
+        }
+        .btn-voltar:hover { border-color: var(--text); }
+
+        /* Estilo do Modal Customizado */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-box {
+            background: var(--bg-card);
+            border: 1px solid var(--stroke);
+            padding: 28px;
+            border-radius: 12px;
+            max-width: 400px;
+            width: 90%;
+            text-align: center;
+        }
+        .modal-box h3 {
+            font-family: 'Anton', sans-serif;
+            font-size: 1.4rem;
+            text-transform: uppercase;
+            color: var(--text);
+            margin-bottom: 10px;
+        }
+        .modal-box p {
+            color: var(--text-dim);
+            font-size: 0.9rem;
+            margin-bottom: 24px;
+        }
+        .modal-botoes {
+            display: flex;
+            gap: 10px;
+        }
+        .modal-btn-voltar {
+            flex: 1;
+            padding: 12px;
+            background: transparent;
+            border: 1px solid var(--stroke);
+            color: var(--text);
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: 'Work Sans', sans-serif;
+        }
+        .modal-btn-voltar:hover { background: var(--stroke); }
+        .modal-btn-confirmar {
+            flex: 1;
+            padding: 12px;
+            background: var(--brass);
+            border: none;
+            color: #fff;
+            border-radius: 8px;
+            cursor: pointer;
+            font-family: 'Anton', sans-serif;
+            font-size: 1rem;
+            text-transform: uppercase;
+        }
+        .modal-btn-confirmar:hover { filter: brightness(1.1); }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Meus Agendamentos</h1>
+        <p class="subtitle">Acompanhe ou cancele seus horários marcados na Barbearia Versati.</p>
+
+        {% if agendamentos %}
+            {% for ag in agendamentos %}
+                <div class="agendamento-card">
+                    <div class="info-detalhe">
+                        <h3>{{ ag.servico }}</h3>
+                        <p><strong>Profissional:</strong> {{ ag.profissional }}</p>
+                    </div>
+                    <div class="lado-direito">
+                        <div class="data-badge">
+                            <div class="dia">{{ ag.data }}</div>
+                            <div class="hora">🕒 {{ ag.horario }}</div>
+                        </div>
+                        <!-- Botão que aciona o modal customizado -->
+                        <button type="button" class="btn-cancelar" onclick="abrirModal('{{ ag.id }}')">Cancelar</button>
+                    </div>
+                </div>
+            {% endfor %}
+        {% else %}
+            <div class="sem-agendamento">
+                Você ainda não possui nenhum agendamento realizado.
+            </div>
+        {% endif %}
+
+        <a href="/" class="btn-voltar">Voltar ao Início</a>
+    </div>
+
+    <!-- Estrutura HTML do Modal -->
+    <div id="modalCancelar" class="modal-overlay">
+        <div class="modal-box">
+            <h3>Cancelar Atendimento</h3>
+            <p>Tem certeza que deseja cancelar este agendamento? Esta ação liberará o horário para outros clientes.</p>
+            <div class="modal-botoes">
+                <button type="button" class="modal-btn-voltar" onclick="fecharModal()">Voltar</button>
+                <form id="formCancelar" method="POST" style="flex: 1;">
+                    <button type="submit" class="modal-btn-confirmar" style="width: 100%;">Sim, Cancelar</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        
+        function fecharModal() {
+            idAgendamentoAtual = null;
+            document.getElementById('modalCancelar').style.display = 'none';
+        }
+
+        let idAgendamentoAtual = null;
+
+        function abrirModal(id) {
+            idAgendamentoAtual = id;
+            document.getElementById('formCancelar').action = `/cancelar-agendamento/${id}`;
+            document.getElementById('modalCancelar').style.display = 'flex';
+        }
+
+        function fecharModal() {
+            idAgendamentoAtual = null;
+            document.getElementById('modalCancelar').style.display = 'none';
+        }
+
+        // ======================================================================
+        // ATUALIZAÇÃO EM TEMPO REAL: REMOVE O AGENDAMENTO SE FOR CONCLUÍDO NO ADMIN
+        // ======================================================================
+        async function verificarStatusAgendamentos() {
+            try {
+                // Certifique-se de que sua rota no Flask para retornar os agendamentos do cliente logado é /api/cliente/agendamentos
+                const response = await fetch('/api/cliente/agendamentos');
+                if (!response.ok) return;
+                const data = await response.json();
+
+                if (data.sucesso && data.agendamentos) {
+                    // Filtra apenas os agendamentos que continuam com status ativo/confirmado
+                    const ativos = data.agendamentos.filter(ag => {
+                        const st = (ag.status || 'confirmado').toLowerCase();
+                        return st === 'confirmado' || st === 'pendente';
+                    });
+
+                    // Se a quantidade de agendamentos ativos mudou (ex: foi concluído no admin), recarrega a página para atualizar a view
+                    const cardsAtuais = document.querySelectorAll('.agendamento-card').length;
+                    if (ativos.length !== cardsAtuais) {
+                        window.location.reload();
+                    }
+                }
+            } catch (e) {
+                console.error("Erro ao sincronizar agendamentos em tempo real:", e);
+            }
+        }
+
+        // Executa a verificação a cada 4 segundos
+        setInterval(verificarStatusAgendamentos, 4000);
+    </script>
+</body>
+</html>

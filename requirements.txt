@@ -1,0 +1,10 @@
+Flask==3.0.3
+gunicorn==23.0.0
+Flask-Cors==6.0.0
+PyMySQL==1.1.1
+mercadopago==2.2.0
+requests==2.32.4
+Werkzeug==3.0.6
+python-dotenv==1.0.1
+waitress==3.0.2
+cryptography==46.0.6

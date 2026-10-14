@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Barbearia — Novo Agendamento</title>
+    <link rel="icon" type="image/jpeg" href="{{ url_for('static', filename='img/Logo_Barbearia_Versati.jpeg') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #000000;
+            --bg-card: #141414;
+            --bg-card-hover: #1a1a1a;
+            --stroke: #2b2b2b;
+            --text: #f5f5f3;
+            --text-dim: #9a9a97;
+            --brass: #d81f2c;
+            --success: #2e7d32;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Work Sans', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 30px 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            width: 100%;
+            background: var(--bg-card);
+            border: 1px solid var(--stroke);
+            padding: 32px 24px;
+            border-radius: 12px;
+        }
+
+        h1 {
+            font-family: 'Anton', sans-serif;
+            font-size: 2rem;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+            text-align: center;
+        }
+        p.subtitle { 
+            color: var(--text-dim); 
+            margin-bottom: 24px; 
+            font-size: 0.9rem; 
+            text-align: center;
+        }
+
+        /* Barra de Progresso das Etapas */
+        .steps-indicator {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 30px;
+            position: relative;
+        }
+        .step-dot {
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            background: var(--stroke);
+            color: var(--text-dim);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            font-weight: 700;
+            transition: all 0.3s;
+        }
+        .step-dot.ativo { background: var(--brass); color: #fff; }
+        .step-dot.concluido { background: var(--success); color: #fff; }
+
+        /* Blocos de Etapas */
+        .etapa-bloco { display: none; }
+        .etapa-bloco.ativa { display: block; animation: fadeIn 0.3s ease-in-out; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        label {
+            display: block;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: var(--text);
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        input[type="tel"] {
+            width: 100%;
+            padding: 12px 14px;
+            background: var(--bg);
+            border: 1px solid var(--stroke);
+            border-radius: 8px;
+            color: var(--text);
+            font-family: 'Work Sans', sans-serif;
+            font-size: 0.95rem;
+            outline: none;
+            margin-bottom: 20px;
+            color-scheme: dark;
+        }
+        input[type="tel"]:focus { border-color: var(--brass); }
+
+        /* --- ESTILOS PROFISSIONAIS PARA AS ABAS (TABS) --- */
+        #categorias-container {
+            display: flex;
+            gap: 0;
+            margin-bottom: 28px;
+            padding-bottom: 2px;
+            border-bottom: 2px solid var(--stroke);
+            overflow-x: auto;
+            scrollbar-width: none;
+        }
+        #categorias-container::-webkit-scrollbar {
+            display: none;
+        }
+
+        .cat-chip {
+            background: transparent;
+            border: none;
+            color: var(--text-dim);
+            padding: 12px 20px;
+            border-radius: 0;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.3s ease;
+            position: relative;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-family: 'Work Sans', sans-serif;
+        }
+
+        .cat-chip:hover {
+            color: var(--text);
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .cat-chip.ativo {
+            color: #fff;
+            font-weight: 700;
+            background: transparent;
+        }
+
+        .cat-chip::after {
+            content: '';
+            position: absolute;
+            left: 50%;
+            bottom: -2px;
+            width: 0;
+            height: 3px;
+            background-color: var(--brass);
+            transition: all 0.3s ease-in-out;
+            transform: translateX(-50%);
+        }
+
+        .cat-chip.ativo::after {
+            width: 100%;
+        }
+
+        /* --- LAYOUT EM LISTA VERTICAL MODERNA PARA OS SERVIÇOS --- */
+        #grid-servicos {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 24px;
+        }
+
+        .card-opcao {
+            background: var(--bg);
+            border: 1px solid var(--stroke);
+            border-radius: 10px;
+            padding: 14px 18px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .card-opcao:hover {
+            border-color: var(--brass);
+            background: var(--bg-card-hover);
+        }
+
+        .card-opcao.selecionado {
+            border-color: var(--brass);
+            background: rgba(216, 31, 44, 0.08);
+        }
+
+        .servico-info-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .card-img-wrapper {
+            width: 45px;
+            height: 45px;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #1c1c1c;
+            border: 1px solid var(--stroke);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .card-img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .servico-placeholder {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #1c1c1c 0%, #0a0a0a 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Anton', sans-serif;
+            font-size: 1rem;
+            color: var(--brass);
+        }
+
+        .servico-textos {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            text-align: left;
+        }
+        .card-titulo {
+            font-family: 'Anton', sans-serif;
+            font-size: 1.05rem;
+            text-transform: uppercase;
+            letter-spacing: 0.02em;
+        }
+        .card-sub {
+            font-size: 0.85rem;
+            color: var(--brass);
+            font-weight: 600;
+        }
+
+        .radio-seletor {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            border: 2px solid var(--stroke);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+
+        .card-opcao.selecionado .radio-seletor {
+            border-color: var(--brass);
+            background: var(--brass);
+        }
+
+        .radio-seletor::after {
+            content: '';
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #fff;
+            transform: scale(0);
+            transition: transform 0.2s;
+        }
+
+        .card-opcao.selecionado .radio-seletor::after {
+            transform: scale(1);
+        }
+
+        /* Grades genéricas (para outras telas como Profissionais) */
+        .grid-selecao {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+
+        /* Avatar de Boneco para Barbeiros */
+        .avatar-boneco {
+            width: 65px;
+            height: 65px;
+            border-radius: 50%;
+            background: #1c1c1c;
+            border: 1px solid var(--stroke);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-dim);
+        }
+        .avatar-boneco svg {
+            width: 38px;
+            height: 38px;
+            fill: currentColor;
+        }
+
+        /* Carrossel de Dias */
+        .dias-grid {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+        .dia-card {
+            background: var(--bg);
+            border: 1px solid var(--stroke);
+            border-radius: 8px;
+            padding: 10px 4px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .dia-card:hover { border-color: var(--brass); }
+        .dia-card.selecionado { background: var(--brass); border-color: var(--brass); color: #fff; }
+        .dia-card .nome-dia { font-size: 0.75rem; text-transform: uppercase; color: var(--text-dim); }
+        .dia-card.selecionado .nome-dia { color: #fff; }
+        .dia-card .num-dia { font-family: 'Anton', sans-serif; font-size: 1.1rem; margin-top: 2px; }
+
+        /* Horários */
+        .horarios-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            max-height: 220px;
+            overflow-y: auto;
+            margin-bottom: 24px;
+        }
+        .horario-btn {
+            background: var(--bg);
+            border: 1px solid var(--stroke);
+            color: var(--text);
+            padding: 10px;
+            border-radius: 8px;
+            font-family: 'Anton', sans-serif;
+            font-size: 1rem;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.2s;
+        }
+        .horario-btn:hover { border-color: var(--brass); background: var(--bg-card-hover); }
+        .horario-btn.selecionado { background: var(--brass); border-color: var(--brass); color: #fff; }
+
+        /* Botões */
+        .botoes-etapa {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+        }
+        .btn {
+            padding: 14px;
+            border-radius: 8px;
+            font-family: 'Anton', sans-serif;
+            font-size: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            cursor: pointer;
+            text-align: center;
+            border: none;
+            flex: 1;
+        }
+        .btn-primary { background: var(--brass); color: #fff; }
+        .btn-outline { background: transparent; color: var(--text); border: 1px solid var(--stroke); }
+        .btn:hover { filter: brightness(1.1); }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        .erro-box {
+            color: var(--brass);
+            background: rgba(216, 31, 44, 0.1);
+            border: 1px solid var(--brass);
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 0.9rem;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Novo Agendamento</h1>
+        <p class="subtitle" id="subtitulo-etapa">Passo 1 de 4: Informações e Profissional</p>
+        
+        <div class="steps-indicator">
+            <div class="step-dot ativo" id="dot-1">1</div>
+            <div class="step-dot" id="dot-2">2</div>
+            <div class="step-dot" id="dot-3">3</div>
+            <div class="step-dot" id="dot-4">4</div>
+        </div>
+
+        {% if erro %}
+            <div class="erro-box">{{ erro }}</div>
+        {% endif %}
+
+        <form method="POST" id="formAgendamento">
+            <input type="hidden" id="barbeiro_id" name="barbeiro_id" required>
+            <input type="hidden" id="servico" name="servico" required>
+            <input type="hidden" id="data" name="data" required>
+            <input type="hidden" id="horario" name="horario" required>
+            <input type="hidden" id="tipo_pagamento" name="tipo_pagamento" value="presencial" required>
+
+            <!-- ETAPA 1: Telefone e Selecionar Barbeiro -->
+            <div class="etapa-bloco ativa" id="etapa-1">
+                <label for="cliente_telefone">1. Seu Telefone / WhatsApp</label>
+                <input type="tel" id="cliente_telefone" name="cliente_telefone" placeholder="(83) 99999-9999" required oninput="validarEtapa1()">
+
+                <label style="margin-top: 10px;">2. Selecione o Profissional</label>
+                <div class="grid-selecao">
+                    {% for b in barbeiros %}
+                    <div class="card-opcao" style="flex-direction: column; text-align: center;" onclick="selecionarBarbeiro('{{ b.id }}', this)">
+                        <div class="avatar-boneco">
+                            <svg viewBox="0 0 24 24">
+                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/>
+                            </svg>
+                        </div>
+                        <div class="card-titulo">{{ b.nome }}</div>
+                        <div class="card-sub">{{ b.cargo }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="botoes-etapa">
+                    <a href="/" class="btn btn-outline">Cancelar</a>
+                    <button type="button" class="btn btn-primary" id="btnAvancar1" onclick="mudarEtapa(2)" disabled>Avançar</button>
+                </div>
+            </div>
+
+            <!-- ETAPA 2: Selecionar Serviço com Categorias e Lista Moderna -->
+            <div class="etapa-bloco" id="etapa-2">
+                <label>Escolha o Serviço</label>
+                
+                <!-- Abas de Categorias Modernas -->
+                <div id="categorias-container">
+                    <!-- Preenchido dinamicamente via JS -->
+                </div>
+
+                <!-- Lista de Serviços -->
+                <div id="grid-servicos"></div>
+                
+                <div class="botoes-etapa">
+                    <button type="button" class="btn btn-outline" onclick="mudarEtapa(1)">Voltar</button>
+                    <button type="button" class="btn btn-primary" id="btnAvancar2" onclick="mudarEtapa(3)" disabled>Avançar</button>
+                </div>
+            </div>
+
+            <!-- ETAPA 3: Data e Horário -->
+            <div class="etapa-bloco" id="etapa-3">
+                <label>Data do Atendimento</label>
+                <div class="dias-grid" id="dias-container"></div>
+
+                <label style="margin-top: 15px;">Horários Disponíveis</label>
+                <div class="horarios-grid" id="lista-horarios">
+                    <p style="color: var(--text-dim); grid-column: span 3; text-align: center;">Selecione uma data acima.</p>
+                </div>
+
+                <div class="botoes-etapa">
+                    <button type="button" class="btn btn-outline" onclick="mudarEtapa(2)">Voltar</button>
+                    <button type="button" class="btn btn-primary" id="btnAvancar3" onclick="mudarEtapa(4)" disabled>Avançar</button>
+                </div>
+            </div>
+
+            <!-- ETAPA 4: Pagamento e Confirmação -->
+            <div class="etapa-bloco" id="etapa-4">
+                <label>Forma de Pagamento</label>
+                <div class="grid-selecao">
+                    <div class="card-opcao selecionado" style="flex-direction: column; text-align: center;" id="opt-presencial" onclick="selecionarPagamento('presencial')">
+                        <div class="card-titulo">Presencial</div>
+                        <div class="card-sub">Pague no balcão ao finalizar.</div>
+                    </div>
+                    <div class="card-opcao" style="flex-direction: column; text-align: center;" id="opt-vip" onclick="selecionarPagamento('vip')">
+                        <div class="card-titulo" style="color: #4caf50;">Plano VIP</div>
+                        <div class="card-sub">Utilizar benefícios da assinatura.</div>
+                    </div>
+                </div>
+
+                <div class="botoes-etapa">
+                    <button type="button" class="btn btn-outline" onclick="mudarEtapa(3)">Voltar</button>
+                    <button type="submit" class="btn btn-primary">Confirmar Agendamento</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        let etapaAtual = 1;
+        let listaGlobalServicos = [];
+        let categoriaAtiva = 'Todos';
+
+        function mudarEtapa(novaEtapa) {
+            document.querySelectorAll('.etapa-bloco').forEach(el => el.classList.remove('ativa'));
+            document.getElementById(`etapa-${novaEtapa}`).classList.add('ativa');
+
+            for (let i = 1; i <= 4; i++) {
+                const dot = document.getElementById(`dot-${i}`);
+                dot.classList.remove('ativo', 'concluido');
+                if (i < novaEtapa) dot.classList.add('concluido');
+                else if (i === novaEtapa) dot.classList.add('ativo');
+            }
+
+            const titulos = [
+                "Passo 1 de 4: Informações e Profissional",
+                "Passo 2 de 4: Escolha o Serviço",
+                "Passo 3 de 4: Data e Horário",
+                "Passo 4 de 4: Pagamento e Confirmação"
+            ];
+            document.getElementById('subtitulo-etapa').innerText = titulos[novaEtapa - 1];
+            etapaAtual = novaEtapa;
+        }
+
+        function validarEtapa1() {
+            const telefone = document.getElementById('cliente_telefone').value.trim();
+            const barbeiroId = document.getElementById('barbeiro_id').value;
+            const btn = document.getElementById('btnAvancar1');
+
+            if (telefone.length >= 8 && barbeiroId !== "") {
+                btn.disabled = false;
+            } else {
+                btn.disabled = true;
+            }
+        }
+
+        function selecionarBarbeiro(id, elemento) {
+            document.querySelectorAll('#etapa-1 .card-opcao').forEach(c => c.classList.remove('selecionado'));
+            elemento.classList.add('selecionado');
+            document.getElementById('barbeiro_id').value = id;
+            validarEtapa1();
+        }
+
+        async function carregarServicosEtapa2() {
+            const grid = document.getElementById('grid-servicos');
+            const catContainer = document.getElementById('categorias-container');
+            
+            try {
+                const res = await fetch('/api/servicos');
+                const data = await res.json();
+                
+                if (data.sucesso && data.servicos && data.servicos.length > 0) {
+                    listaGlobalServicos = data.servicos;
+                    
+                    listaGlobalServicos.forEach(s => {
+                        if (!s.categoria || s.categoria.trim() === '') {
+                            s.categoria = 'Geral';
+                        }
+                    });
+
+                    const categoriasSet = new Set(['Todos']);
+                    listaGlobalServicos.forEach(s => {
+                        categoriasSet.add(s.categoria);
+                    });
+                    
+                    catContainer.innerHTML = '';
+                    categoriasSet.forEach(cat => {
+                        const chip = document.createElement('div');
+                        chip.className = `cat-chip ${cat === categoriaAtiva ? 'ativo' : ''}`;
+                        chip.textContent = cat;
+                        chip.onclick = () => {
+                            categoriaAtiva = cat;
+                            document.querySelectorAll('.cat-chip').forEach(c => c.classList.remove('ativo'));
+                            chip.classList.add('ativo');
+                            renderizarGridServicos();
+                        };
+                        catContainer.appendChild(chip);
+                    });
+
+                    renderizarGridServicos();
+                } else {
+                    grid.innerHTML = '<p style="color: var(--text-dim); text-align: center; padding: 20px;">Nenhum serviço cadastrado.</p>';
+                }
+            } catch (e) {
+                console.error("Erro ao carregar serviços", e);
+            }
+        }
+
+        function renderizarGridServicos() {
+            const grid = document.getElementById('grid-servicos');
+            grid.innerHTML = '';
+
+            const servicosFiltrados = categoriaAtiva === 'Todos' 
+                ? listaGlobalServicos 
+                : listaGlobalServicos.filter(s => s.categoria === categoriaAtiva);
+
+            if (servicosFiltrados.length === 0) {
+                grid.innerHTML = '<p style="color: var(--text-dim); text-align: center; padding: 20px;">Nenhum serviço nesta categoria.</p>';
+                return;
+            }
+
+            servicosFiltrados.forEach(s => {
+                const precoFmt = Number(s.preco).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                
+                const card = document.createElement('div');
+                card.className = 'card-opcao';
+                
+                const servicoSelecionadoAtual = document.getElementById('servico').value;
+                if (servicoSelecionadoAtual === s.nome) {
+                    card.classList.add('selecionado');
+                }
+
+                card.onclick = () => selecionarServico(s.nome, card);
+                
+                let conteudoVisual = '';
+                if (s.foto && s.foto.trim() !== '') {
+                    conteudoVisual = `<div class="card-img-wrapper"><img src="${s.foto}" class="card-img" alt="${s.nome}"></div>`;
+                } else {
+                    const primeiraLetra = s.nome ? s.nome.charAt(0).toUpperCase() : 'S';
+                    conteudoVisual = `<div class="card-img-wrapper"><div class="servico-placeholder">${primeiraLetra}</div></div>`;
+                }
+
+                card.innerHTML = `
+                    <div class="servico-info-wrapper">
+                        ${conteudoVisual}
+                        <div class="servico-textos">
+                            <div class="card-titulo">${s.nome}</div>
+                            <div class="card-sub">${precoFmt}</div>
+                        </div>
+                    </div>
+                    <div class="radio-seletor"></div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        function selecionarServico(nomeServico, elemento) {
+            document.querySelectorAll('#grid-servicos .card-opcao').forEach(c => c.classList.remove('selecionado'));
+            elemento.classList.add('selecionado');
+            document.getElementById('servico').value = nomeServico;
+            document.getElementById('btnAvancar2').disabled = false;
+        }
+
+        function gerarDias() {
+            const container = document.getElementById('dias-container');
+            container.innerHTML = '';
+            const diasSemana = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
+            for (let i = 0; i < 6; i++) {
+                let d = new Date();
+                d.setDate(d.getDate() + i);
+                let dataFmt = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+                
+                let card = document.createElement('div');
+                card.className = 'dia-card';
+                if (i === 0) {
+                    card.classList.add('selecionado');
+                    document.getElementById('data').value = dataFmt;
+                }
+                card.innerHTML = `<div class="nome-dia">${diasSemana[d.getDay()]}</div><div class="num-dia">${String(d.getDate()).padStart(2,'0')}</div>`;
+                
+                card.onclick = () => {
+                    document.querySelectorAll('.dia-card').forEach(c => c.classList.remove('selecionado'));
+                    card.classList.add('selecionado');
+                    document.getElementById('data').value = dataFmt;
+                    carregarHorarios();
+                };
+                container.appendChild(card);
+            }
+            carregarHorarios();
+        }
+
+        async function carregarHorarios() {
+            const barbId = document.getElementById('barbeiro_id').value;
+            const dataVal = document.getElementById('data').value;
+            const lista = document.getElementById('lista-horarios');
+
+            if (!barbId || !dataVal) return;
+
+            const res = await fetch(`/api/horarios-disponiveis?barbeiro_id=${barbId}&data=${dataVal}`);
+            const horarios = await res.json();
+
+            lista.innerHTML = '';
+            if (horarios.length === 0) {
+                lista.innerHTML = '<p style="color: var(--text-dim); grid-column: span 3; text-align: center;">Nenhum horário disponível para esta data.</p>';
+                return;
+            }
+
+            horarios.forEach(h => {
+                const btn = document.createElement('div');
+                btn.className = 'horario-btn';
+                btn.textContent = h;
+                btn.onclick = () => {
+                    document.querySelectorAll('.horario-btn').forEach(b => b.classList.remove('selecionado'));
+                    btn.classList.add('selecionado');
+                    document.getElementById('horario').value = h;
+                    document.getElementById('btnAvancar3').disabled = false;
+                };
+                lista.appendChild(btn);
+            });
+        }
+
+        function selecionarPagamento(tipo) {
+            document.getElementById('tipo_pagamento').value = tipo;
+            document.getElementById('opt-presencial').classList.remove('selecionado');
+            document.getElementById('opt-vip').classList.remove('selecionado');
+            document.getElementById(`opt-${tipo}`).classList.add('selecionado');
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            carregarServicosEtapa2();
+            gerarDias();
+        });
+    </script>
+</body>
+</html>
