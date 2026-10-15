@@ -399,10 +399,10 @@
             btn.disabled = true;
             btn.innerText = "Gerando Pix...";
 
-            const preco = parseFloat("{{ preco }}");
+            const nomePlano = document.querySelector('.plano-summary h3').textContent.trim();
 
             const dados = {
-                valor: preco,
+                nome_plano: nomePlano,
                 nome: document.getElementById('pixNome').value,
                 cpf: document.getElementById('pixCpf').value,
                 telefone: document.getElementById('pixTelefone').value,
@@ -438,10 +438,6 @@
         }
 
         function iniciarChecagemPix(pagamentoId) {
-            const clienteId = "{{ session.get('cliente_id', '') }}";
-            const nomePlano = "{{ plano }}";
-            const preco = parseFloat("{{ preco }}");
-
             intervalChecagemPix = setInterval(async () => {
                 try {
                     const response = await fetch(`/api/pagamento/status/${pagamentoId}`);
@@ -455,11 +451,7 @@
                         await fetch('/api/assinaturas/assinar', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                cliente_id: parseInt(clienteId),
-                                nome_plano: nomePlano,
-                                preco: preco
-                            })
+                            body: JSON.stringify({ pagamento_id: pagamentoId })
                         });
 
                         alert("Pagamento Pix confirmado! Sua assinatura foi ativada.");
