@@ -41,6 +41,7 @@ except ImportError:  # sem a biblioteca, "ver senha" fica desligado
     InvalidToken = Exception
 
 sdk = mercadopago.SDK(os.environ.get("MERCADO_PAGO_ACCESS_TOKEN"))
+MERCADO_PAGO_PUBLIC_KEY = os.environ.get("MERCADO_PAGO_PUBLIC_KEY", "")
 
 # Login do administrador: e-mail + HASH da senha (nunca a senha) ficam nas variáveis de ambiente.
 ADMIN_EMAIL = (os.environ.get("ADMIN_EMAIL") or "").strip().lower()
@@ -2696,7 +2697,8 @@ def checkout_plano():
     nome_plano = plano["nome"]
     preco = f"{plano['preco']:.2f}"  # o preço do navegador (?preco=) é ignorado
     
-    return render_template("checkout_plano.html", plano=nome_plano, preco=preco)
+    return render_template("checkout_plano.html", plano=nome_plano, preco=preco,
+                           mp_public_key=MERCADO_PAGO_PUBLIC_KEY)
 
 
 @app.route("/planos", methods=["GET"])

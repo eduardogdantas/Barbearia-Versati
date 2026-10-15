@@ -279,6 +279,7 @@
         <a href="/planos" class="btn-cancelar">Voltar aos Planos</a>
     </div>
 
+    <script src="https://sdk.mercadopago.com/js/v2"></script>
     <script>
         let intervalChecagemPix = null;
 
@@ -345,6 +346,8 @@
             input.value = v;
         }
 
+        const mp = new MercadoPago("{{ mp_public_key }}", { locale: "pt-BR" });
+
         async function concluirAssinaturaCartao(event) {
             event.preventDefault();
 
@@ -352,27 +355,30 @@
             btn.disabled = true;
             btn.innerText = "Processando...";
 
-            const clienteId = "{{ session.get('cliente_id', '') }}";
-            const nomePlano = "{{ plano }}";
-            const preco = parseFloat("{{ preco }}");
-
-            // Exemplo de token para teste (ou gerado via SDK do Mercado Pago no front)
-            const dadosCartao = {
-                cliente_id: parseInt(clienteId),
-                nome_plano: nomePlano,
-                valor: preco,
-                email: document.getElementById('cartaoEmail').value,
-                cpf: document.getElementById('cartaoCpf').value,
-                telefone: document.getElementById('cartaoTelefone').value,
-                token: "TEST-" + Math.random().toString(36).substring(2),
-                payment_method_id: "visa"
-            };
+            const nomePlano = document.querySelector('.plano-summary h3').textContent.trim();
+            const validade = document.getElementById('cartaoValidade').value.split('/');
 
             try {
+                const token = await mp.createCardToken({
+                    cardNumber: document.getElementById('cartaoNumero').value.replace(/\D/g, ''),
+                    cardholderName: document.getElementById('cartaoNome').value,
+                    cardExpirationMonth: validade[0],
+                    cardExpirationYear: '20' + validade[1],
+                    securityCode: document.getElementById('cartaoCvv').value,
+                    identificationType: 'CPF',
+                    identificationNumber: document.getElementById('cartaoCpf').value.replace(/\D/g, '')
+                });
+
                 const response = await fetch('/api/pagamento/cartao', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(dadosCartao)
+                    body: JSON.stringify({
+                        nome_plano: nomePlano,
+                        token: token.id,
+                        email: document.getElementById('cartaoEmail').value,
+                        cpf: document.getElementById('cartaoCpf').value,
+                        telefone: document.getElementById('cartaoTelefone').value
+                    })
                 });
 
                 const res = await response.json();
@@ -386,7 +392,7 @@
                     btn.innerText = "Confirmar e Assinar com Cartão";
                 }
             } catch (error) {
-                alert("Erro de conexão ao processar pagamento.");
+                alert("Não foi possível validar o cartão. Confira os dados e tente novamente.");
                 btn.disabled = false;
                 btn.innerText = "Confirmar e Assinar com Cartão";
             }
