@@ -7361,11 +7361,34 @@ class _AgendarClienteScreenState extends State<AgendarClienteScreen> {
         }
         _carregando = false;
       });
-      if (_barbeiroId != null) _carregarHorarios();
+      if (_barbeiroId != null) {
+        _carregarHorarios();
+        _carregarServicosDoBarbeiro();
+      }
     } catch (e) {
       debugPrint('Erro ao carregar dados do agendamento: $e');
       if (mounted) setState(() => _carregando = false);
       _snack('Erro de conexão com o servidor.', erro: true);
+    }
+  }
+
+  // Só lista os serviços que o profissional realiza (aba Comissões do barbeiro > "Realiza")
+  Future<void> _carregarServicosDoBarbeiro() async {
+    if (_barbeiroId == null) return;
+    try {
+      final resp = await http.get(Uri.parse('${AppConfig.apiUrl}/servicos?barbeiro_id=$_barbeiroId'));
+      if (!mounted) return;
+      if (resp.statusCode == 200) {
+        final lista = jsonDecode(resp.body)['servicos'] ?? [];
+        setState(() {
+          _servicos = lista;
+          if (_servico != null && !_servicos.any((s) => (s['nome'] ?? '').toString() == _servico)) {
+            _servico = null;
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar serviços do profissional: $e');
     }
   }
 
@@ -7552,6 +7575,7 @@ class _AgendarClienteScreenState extends State<AgendarClienteScreen> {
                   onChanged: (v) {
                     setState(() => _barbeiroId = v);
                     _carregarHorarios();
+                    _carregarServicosDoBarbeiro();
                   },
                 ),
                 const SizedBox(height: 12),

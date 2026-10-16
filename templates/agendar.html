@@ -536,18 +536,39 @@
         function selecionarBarbeiro(id, elemento) {
             document.querySelectorAll('#etapa-1 .card-opcao').forEach(c => c.classList.remove('selecionado'));
             elemento.classList.add('selecionado');
+            const anterior = document.getElementById('barbeiro_id').value;
             document.getElementById('barbeiro_id').value = id;
+
+            if (String(anterior) !== String(id)) {
+                // Cada profissional realiza serviços diferentes: limpa a escolha anterior e recarrega a lista
+                document.getElementById('servico').value = '';
+                document.getElementById('btnAvancar2').disabled = true;
+                categoriaAtiva = 'Todos';
+                carregarServicosEtapa2();
+            }
             validarEtapa1();
         }
+
+        let requisicaoServicos = 0;
 
         async function carregarServicosEtapa2() {
             const grid = document.getElementById('grid-servicos');
             const catContainer = document.getElementById('categorias-container');
-            
+            const barbeiroId = document.getElementById('barbeiro_id').value;
+            const msgVazia = (txt) => `<p style="color: var(--text-dim); text-align: center; padding: 20px;">${txt}</p>`;
+
+            if (!barbeiroId) {
+                catContainer.innerHTML = '';
+                grid.innerHTML = msgVazia('Escolha o profissional primeiro.');
+                return;
+            }
+
+            const minhaRequisicao = ++requisicaoServicos;
             try {
-                const res = await fetch('/api/servicos');
+                const res = await fetch(`/api/servicos?barbeiro_id=${encodeURIComponent(barbeiroId)}`);
                 const data = await res.json();
-                
+                if (minhaRequisicao !== requisicaoServicos) return; // o cliente já trocou de profissional
+
                 if (data.sucesso && data.servicos && data.servicos.length > 0) {
                     listaGlobalServicos = data.servicos;
                     
@@ -578,10 +599,15 @@
 
                     renderizarGridServicos();
                 } else {
-                    grid.innerHTML = '<p style="color: var(--text-dim); text-align: center; padding: 20px;">Nenhum serviço cadastrado.</p>';
+                    listaGlobalServicos = [];
+                    catContainer.innerHTML = '';
+                    grid.innerHTML = msgVazia('Este profissional não tem serviços disponíveis no momento.');
                 }
             } catch (e) {
                 console.error("Erro ao carregar serviços", e);
+                if (minhaRequisicao === requisicaoServicos) {
+                    grid.innerHTML = msgVazia('Não foi possível carregar os serviços. Tente novamente.');
+                }
             }
         }
 
@@ -707,7 +733,7 @@
         }
 
         document.addEventListener('DOMContentLoaded', () => {
-            carregarServicosEtapa2();
+            carregarServicosEtapa2(); // mostra "escolha o profissional" até o cliente escolher
             gerarDias();
         });
     </script>

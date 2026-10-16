@@ -1156,19 +1156,55 @@ def editar_ou_remover_plano_catalogo(plano_id):
         conn.close()
 
 
+def barbeiro_realiza_servico(cursor, barbeiro_id, servico_nome):
+    """False só quando o admin desmarcou "Realiza" desse serviço para o barbeiro (sem configuração = realiza)."""
+    cursor.execute(
+        """
+        SELECT bs.realiza
+        FROM servicos s
+        LEFT JOIN barbeiro_servicos bs ON bs.servico_id = s.id AND bs.barbeiro_id = %s
+        WHERE LOWER(TRIM(s.nome)) = LOWER(TRIM(%s))
+        """,
+        (barbeiro_id, servico_nome),
+    )
+    linha = cursor.fetchone()
+    return not (linha and linha["realiza"] is not None and int(linha["realiza"]) == 0)
+
+
 @app.route('/api/servicos', methods=['GET'])
 def listar_servicos_site():
+    """Serviços do site. Com ?barbeiro_id=N lista só o que esse barbeiro realiza."""
+    bruto = (request.args.get("barbeiro_id") or "").strip()
+    barbeiro_id = None
+    if bruto:
+        barbeiro_id = parse_int(bruto, 1)
+        if barbeiro_id is None:
+            return jsonify({'sucesso': False, 'servicos': [], 'mensagem': 'Profissional inválido.'}), 400
+
+    juncao = ""
+    filtro = ""
+    params = ()
+    if barbeiro_id is not None:
+        juncao = "LEFT JOIN barbeiro_servicos bs ON bs.servico_id = s.id AND bs.barbeiro_id = %s"
+        filtro = "WHERE bs.realiza IS NULL OR bs.realiza = 1"
+        params = (barbeiro_id,)
+
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
             try:
                 cursor.execute(
-                    "SELECT id, nome, preco, categoria, IFNULL(foto, '') AS foto "
-                    "FROM servicos ORDER BY categoria ASC, nome ASC"
+                    f"SELECT s.id, s.nome, s.preco, s.categoria, IFNULL(s.foto, '') AS foto "
+                    f"FROM servicos s {juncao} {filtro} ORDER BY s.categoria ASC, s.nome ASC",
+                    params,
                 )
                 servicos = cursor.fetchall()
             except Exception:
-                cursor.execute("SELECT id, nome, preco, categoria FROM servicos ORDER BY categoria ASC, nome ASC")
+                cursor.execute(
+                    f"SELECT s.id, s.nome, s.preco, s.categoria "
+                    f"FROM servicos s {juncao} {filtro} ORDER BY s.categoria ASC, s.nome ASC",
+                    params,
+                )
                 servicos = cursor.fetchall()
                 for s in servicos:
                     s['foto'] = ''
@@ -3073,6 +3109,8 @@ def api_admin_criar_agendamento():
             serv_db = cursor.fetchone()
             if not barb or not serv_db:
                 return jsonify({"sucesso": False, "mensagem": "Profissional ou serviço não encontrado."}), 404
+            if not barbeiro_realiza_servico(cursor, barbeiro_id, servico):
+                return jsonify({"sucesso": False, "mensagem": "Este profissional não realiza o serviço escolhido."}), 400
 
             preco = 0.00 if tipo_pagamento in ("plano", "vip") else float(serv_db["preco"])
 
@@ -3694,6 +3732,8 @@ def agendar():
 
                     if not barb or not serv_db:
                         erro = "Profissional ou serviço não encontrado."
+                    elif not barbeiro_realiza_servico(cursor, barbeiro_id, servico):
+                        erro = "Este profissional não realiza o serviço escolhido."
                     else:
                         profissional_nome = barb['nome']
                         preco_servico = 0.00 if tipo_pagamento in ["plano", "vip"] else float(serv_db['preco'])
