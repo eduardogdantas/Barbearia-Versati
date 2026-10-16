@@ -398,6 +398,13 @@ class _MainMultiTaskScreenState extends State<MainMultiTaskScreen> {
                           MaterialPageRoute(builder: (context) => const HistoricoAtendimentosScreen()),
                         );
                       }),
+                      _buildItemMenu(ctx, Icons.payments_outlined, "Comissões", () {
+                        Navigator.pop(ctx);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const ComissoesScreen()),
+                        );
+                      }),
                       _buildItemMenu(ctx, Icons.inventory_2_outlined, "Pacotes", () {
                         Navigator.pop(ctx);
                         Navigator.push(
@@ -1771,7 +1778,32 @@ class _FinanceiroViewState extends State<FinanceiroView> {
                   ),
                   const SizedBox(height: 24),
 
-                  _buildSecaoComissoes(),
+                  InkWell(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const ComissoesScreen()),
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: _cardDark,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.orangeAccent.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.payments_outlined, color: Colors.orangeAccent, size: 20),
+                          const SizedBox(width: 10),
+                          const Expanded(
+                            child: Text('Ver comissões dos barbeiros',
+                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)),
+                          ),
+                          Icon(Icons.chevron_right, color: _textSecondary),
+                        ],
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 24),
 
                   const Text('Serviços Mais Solicitados', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
@@ -5066,6 +5098,19 @@ class _AgendaProfissionalScreenState extends State<AgendaProfissionalScreen> {
           ),
         ],
       ),
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: _brandRed,
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.person_add_alt_1),
+        label: const Text('Agendar cliente'),
+        onPressed: () async {
+          final ok = await Navigator.push<bool>(
+            context,
+            MaterialPageRoute(builder: (context) => AgendarClienteScreen(dataInicial: _dataSelecionada)),
+          );
+          if (ok == true) _carregarAgendaGeral();
+        },
+      ),
       body: _isLoading
           ? Center(child: CircularProgressIndicator(color: _brandRed))
           : _barbeirosComAgenda.isEmpty
@@ -5079,7 +5124,7 @@ class _AgendaProfissionalScreenState extends State<AgendaProfissionalScreen> {
                   onRefresh: _carregarAgendaGeral,
                   color: _brandRed,
                   child: ListView.builder(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
                     itemCount: _barbeirosComAgenda.length,
                     itemBuilder: (context, index) {
                       final itemGrupo = _barbeirosComAgenda[index];
@@ -6495,6 +6540,940 @@ class _AbaHorariosState extends State<_AbaHorarios> {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ==============================================================================
+// PAINEL DE COMISSÕES (intervalo de datas + colaborador)
+// ==============================================================================
+class ComissoesScreen extends StatefulWidget {
+  const ComissoesScreen({super.key});
+
+  @override
+  State<ComissoesScreen> createState() => _ComissoesScreenState();
+}
+
+class _ComissoesScreenState extends State<ComissoesScreen> {
+  final Color _bgColor = const Color(0xFF121212);
+  final Color _cardColor = const Color(0xFF1E1E1E);
+  final Color _brandRed = const Color(0xFFCF243E);
+  final Color _textSecondary = const Color(0xFF9E9E9E);
+
+  late DateTime _inicio;
+  late DateTime _fim;
+  List<dynamic> _barbeiros = [];
+  String? _barbeiroId; // null = todos os colaboradores
+  bool _carregando = true;
+  String? _erro;
+  Map<String, dynamic>? _dados;
+
+  @override
+  void initState() {
+    super.initState();
+    final hoje = DateTime.now();
+    _inicio = DateTime(hoje.year, hoje.month, 1);
+    _fim = DateTime(hoje.year, hoje.month, hoje.day);
+    _carregarBarbeiros();
+    _carregar();
+  }
+
+  String _fmtApi(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  String _fmtBr(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+
+  String _fmtBrIso(String iso) {
+    final p = iso.split('-');
+    return p.length == 3 ? '${p[2]}/${p[1]}' : iso;
+  }
+
+  double _num(dynamic v) => double.tryParse('${v ?? 0}') ?? 0;
+
+  String _moeda(double v) => 'R\$ ${v.toStringAsFixed(2).replaceAll('.', ',')}';
+
+  String _pct(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
+
+  dynamic _fotoDoBarbeiro(dynamic id) {
+    for (final b in _barbeiros) {
+      if (b['id'].toString() == id.toString()) return b['foto_url'];
+    }
+    return null;
+  }
+
+  Future<void> _carregarBarbeiros() async {
+    try {
+      final resp = await http.get(
+        Uri.parse('${AppConfig.apiUrl}/admin/barbeiros'),
+        headers: AppConfig.adminHeaders,
+      );
+      if (resp.statusCode == 200 && mounted) {
+        final todos = jsonDecode(resp.body)['barbeiros'] ?? [];
+        setState(() {
+          _barbeiros = todos.where((b) => !(b['ativo'] == 0 || b['ativo'] == false)).toList();
+        });
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar barbeiros (comissões): $e');
+    }
+  }
+
+  Future<void> _carregar() async {
+    if (!mounted) return;
+    setState(() {
+      _carregando = true;
+      _erro = null;
+    });
+    try {
+      final q = StringBuffer('inicio=${_fmtApi(_inicio)}&fim=${_fmtApi(_fim)}');
+      if (_barbeiroId != null) q.write('&barbeiro_id=$_barbeiroId');
+      final resp = await http.get(
+        Uri.parse('${AppConfig.apiUrl}/admin/comissoes?$q'),
+        headers: AppConfig.adminHeaders,
+      );
+      if (!mounted) return;
+      if (resp.statusCode == 200) {
+        setState(() {
+          _dados = jsonDecode(resp.body);
+          _carregando = false;
+        });
+      } else {
+        String msg = 'Erro ao carregar comissões.';
+        try {
+          msg = (jsonDecode(resp.body)['mensagem'] ?? msg).toString();
+        } catch (_) {}
+        setState(() {
+          _erro = msg;
+          _carregando = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar comissões: $e');
+      if (mounted) {
+        setState(() {
+          _erro = 'Erro de conexão com o servidor.';
+          _carregando = false;
+        });
+      }
+    }
+  }
+
+  void _definirPeriodo(DateTime i, DateTime f) {
+    setState(() {
+      _inicio = i;
+      _fim = f;
+    });
+    _carregar();
+  }
+
+  Future<void> _escolherPeriodo() async {
+    final r = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2023),
+      lastDate: DateTime(2030),
+      initialDateRange: DateTimeRange(start: _inicio, end: _fim),
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.dark().copyWith(
+            colorScheme: ColorScheme.dark(primary: _brandRed, onSurface: Colors.white),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (r != null) _definirPeriodo(r.start, r.end);
+  }
+
+  Widget _chipAtalho(String label, VoidCallback onTap) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ActionChip(
+        label: Text(label, style: const TextStyle(color: Colors.white, fontSize: 12)),
+        backgroundColor: _cardColor,
+        side: const BorderSide(color: Colors.white10),
+        onPressed: onTap,
+      ),
+    );
+  }
+
+  Widget _linhaResumo(String label, String valor, Color cor, {bool destaque = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Text(label, style: TextStyle(color: _textSecondary, fontSize: destaque ? 14 : 13)),
+          ),
+          Text(
+            valor,
+            style: TextStyle(color: cor, fontWeight: FontWeight.bold, fontSize: destaque ? 18 : 14),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFiltros() {
+    final valorAtual = _barbeiros.any((b) => b['id'].toString() == _barbeiroId) ? _barbeiroId : null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: _escolherPeriodo,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            decoration: BoxDecoration(
+              color: _cardColor,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white10),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.date_range, color: _brandRed, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('PERÍODO', style: TextStyle(color: _textSecondary, fontSize: 10, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${_fmtBr(_inicio)}  até  ${_fmtBr(_fim)}',
+                        style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.edit_calendar, color: _textSecondary, size: 18),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              _chipAtalho('Hoje', () {
+                final h = DateTime.now();
+                final d = DateTime(h.year, h.month, h.day);
+                _definirPeriodo(d, d);
+              }),
+              _chipAtalho('7 dias', () {
+                final h = DateTime.now();
+                final d = DateTime(h.year, h.month, h.day);
+                _definirPeriodo(d.subtract(const Duration(days: 6)), d);
+              }),
+              _chipAtalho('Este mês', () {
+                final h = DateTime.now();
+                _definirPeriodo(DateTime(h.year, h.month, 1), DateTime(h.year, h.month, h.day));
+              }),
+              _chipAtalho('Mês passado', () {
+                final h = DateTime.now();
+                _definirPeriodo(DateTime(h.year, h.month - 1, 1), DateTime(h.year, h.month, 0));
+              }),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        DropdownButtonFormField<String?>(
+          value: valorAtual,
+          isExpanded: true,
+          dropdownColor: _cardColor,
+          style: const TextStyle(color: Colors.white, fontSize: 15),
+          decoration: InputDecoration(
+            labelText: 'Colaborador',
+            labelStyle: TextStyle(color: _textSecondary),
+            prefixIcon: Icon(Icons.person_outline, color: _brandRed),
+            filled: true,
+            fillColor: _cardColor,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+          ),
+          items: [
+            const DropdownMenuItem<String?>(value: null, child: Text('Todos os colaboradores')),
+            ..._barbeiros.map<DropdownMenuItem<String?>>(
+              (b) => DropdownMenuItem<String?>(
+                value: b['id'].toString(),
+                child: Text((b['nome'] ?? '').toString(), overflow: TextOverflow.ellipsis),
+              ),
+            ),
+          ],
+          onChanged: (v) {
+            setState(() => _barbeiroId = v);
+            _carregar();
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildResumo() {
+    final totalFat = _num(_dados?['total_faturamento']);
+    final totalCom = _num(_dados?['total_comissao']);
+    final cortes = (_dados?['total_cortes'] ?? 0).toString();
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.orangeAccent.withOpacity(0.3)),
+      ),
+      child: Column(
+        children: [
+          _linhaResumo('Cortes finalizados', cortes, Colors.white),
+          _linhaResumo('Faturamento', _moeda(totalFat), Colors.white),
+          _linhaResumo('Comissões a pagar', _moeda(totalCom), Colors.orangeAccent),
+          const Divider(color: Colors.white10, height: 16),
+          _linhaResumo('Fica na barbearia', _moeda(totalFat - totalCom), Colors.greenAccent, destaque: true),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCardBarbeiro(Map<String, dynamic> g) {
+    final servicos = (g['servicos'] ?? []) as List<dynamic>;
+    final atendimentos = (g['atendimentos'] ?? []) as List<dynamic>;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: _cardColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          iconColor: _textSecondary,
+          collapsedIconColor: _textSecondary,
+          leading: _buildAvatarBarbeiro(_fotoDoBarbeiro(g['barbeiro_id']), radius: 18),
+          title: Text(
+            (g['nome'] ?? '').toString(),
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Text(
+            '${g['qtd']} corte(s) • Faturou ${_moeda(_num(g['faturamento']))}',
+            style: TextStyle(color: _textSecondary, fontSize: 11),
+          ),
+          trailing: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text('A RECEBER', style: TextStyle(color: _textSecondary, fontSize: 9, fontWeight: FontWeight.bold)),
+              Text(
+                _moeda(_num(g['comissao'])),
+                style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 14),
+              ),
+            ],
+          ),
+          children: [
+            if (atendimentos.isEmpty)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Nenhum corte finalizado no período.', style: TextStyle(color: _textSecondary, fontSize: 12)),
+              )
+            else ...[
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text('POR SERVIÇO', style: TextStyle(color: _textSecondary, fontSize: 10, fontWeight: FontWeight.bold)),
+              ),
+              ...servicos.map((sv) {
+                return Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text((sv['servico'] ?? '').toString(),
+                                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                            Text(
+                              '${sv['qtd']}x • ${_moeda(_num(sv['faturamento']))} • ${_pct(_num(sv['percentual']))}% de comissão',
+                              style: TextStyle(color: _textSecondary, fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(_moeda(_num(sv['comissao'])),
+                          style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 12)),
+                    ],
+                  ),
+                );
+              }),
+              const SizedBox(height: 14),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text('ATENDIMENTOS', style: TextStyle(color: _textSecondary, fontSize: 10, fontWeight: FontWeight.bold)),
+              ),
+              ...atendimentos.map((a) {
+                return Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${_fmtBrIso((a['data'] ?? '').toString())} ${a['horario'] ?? ''} • ${a['cliente_nome'] ?? ''}',
+                              style: const TextStyle(color: Colors.white, fontSize: 12),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Text(
+                              '${a['servico'] ?? ''} • ${_moeda(_num(a['valor']))}',
+                              style: TextStyle(color: _textSecondary, fontSize: 11),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(_moeda(_num(a['comissao'])),
+                          style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 12)),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final lista = ((_dados?['barbeiros'] ?? []) as List<dynamic>);
+    return Scaffold(
+      backgroundColor: _bgColor,
+      appBar: AppBar(
+        backgroundColor: _cardColor,
+        elevation: 0,
+        title: Row(
+          children: [
+            Icon(Icons.payments_outlined, color: _brandRed, size: 20),
+            const SizedBox(width: 8),
+            const Text('COMISSÕES', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.white70, size: 22),
+            tooltip: 'Atualizar',
+            onPressed: _carregar,
+          ),
+        ],
+      ),
+      body: RefreshIndicator(
+        onRefresh: _carregar,
+        color: _brandRed,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16),
+          children: [
+            _buildFiltros(),
+            const SizedBox(height: 16),
+            if (_carregando)
+              Padding(
+                padding: const EdgeInsets.only(top: 40),
+                child: Center(child: CircularProgressIndicator(color: _brandRed)),
+              )
+            else if (_erro != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 40),
+                child: Center(child: Text(_erro!, style: TextStyle(color: _textSecondary, fontSize: 14), textAlign: TextAlign.center)),
+              )
+            else ...[
+              _buildResumo(),
+              const SizedBox(height: 16),
+              if (lista.isEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(color: _cardColor, borderRadius: BorderRadius.circular(12)),
+                  child: Text('Nenhum corte finalizado neste período.', style: TextStyle(color: _textSecondary, fontSize: 12)),
+                )
+              else
+                ...lista.map((g) => _buildCardBarbeiro(Map<String, dynamic>.from(g))),
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  'Conta pelo dia do agendamento. Percentual definido na aba Comissões de cada barbeiro (padrão 40%).',
+                  style: TextStyle(color: _textSecondary, fontSize: 10),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ==============================================================================
+// AGENDAR CLIENTE (feito pelo administrador)
+// ==============================================================================
+class AgendarClienteScreen extends StatefulWidget {
+  final DateTime? dataInicial;
+  final String? barbeiroIdInicial;
+
+  const AgendarClienteScreen({super.key, this.dataInicial, this.barbeiroIdInicial});
+
+  @override
+  State<AgendarClienteScreen> createState() => _AgendarClienteScreenState();
+}
+
+class _AgendarClienteScreenState extends State<AgendarClienteScreen> {
+  final Color _bgColor = const Color(0xFF121212);
+  final Color _cardColor = const Color(0xFF1E1E1E);
+  final Color _brandRed = const Color(0xFFCF243E);
+  final Color _textSecondary = const Color(0xFF9E9E9E);
+
+  static const Map<String, String> _formasPagamento = {
+    'presencial': 'Pagar no local',
+    'pix': 'Pix',
+    'cartao': 'Cartão',
+    'debito': 'Débito',
+    'credito': 'Crédito',
+    'dinheiro': 'Dinheiro',
+    'plano': 'Plano (assinante)',
+  };
+
+  List<dynamic> _clientes = [];
+  List<dynamic> _barbeiros = [];
+  List<dynamic> _servicos = [];
+  List<String> _horarios = [];
+
+  Map<String, dynamic>? _cliente;
+  String? _barbeiroId;
+  late DateTime _data;
+  String? _horario;
+  String? _servico;
+  String _pagamento = 'presencial';
+  final TextEditingController _telefoneCtrl = TextEditingController();
+
+  bool _carregando = true;
+  bool _carregandoHorarios = false;
+  bool _salvando = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final base = widget.dataInicial ?? DateTime.now();
+    final hoje = DateTime.now();
+    final hojeSemHora = DateTime(hoje.year, hoje.month, hoje.day);
+    final baseSemHora = DateTime(base.year, base.month, base.day);
+    _data = baseSemHora.isBefore(hojeSemHora) ? hojeSemHora : baseSemHora;
+    _barbeiroId = widget.barbeiroIdInicial;
+    _carregarDados();
+  }
+
+  @override
+  void dispose() {
+    _telefoneCtrl.dispose();
+    super.dispose();
+  }
+
+  String _fmtApi(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  String _fmtBr(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+
+  void _snack(String msg, {bool erro = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), backgroundColor: erro ? Colors.red : Colors.teal),
+    );
+  }
+
+  Future<void> _carregarDados() async {
+    try {
+      final respostas = await Future.wait([
+        http.get(Uri.parse('${AppConfig.apiUrl}/admin/usuarios'), headers: AppConfig.adminHeaders),
+        http.get(Uri.parse('${AppConfig.apiUrl}/admin/barbeiros'), headers: AppConfig.adminHeaders),
+        http.get(Uri.parse('${AppConfig.apiUrl}/admin/servicos'), headers: AppConfig.adminHeaders),
+      ]);
+      if (!mounted) return;
+      final ru = respostas[0], rb = respostas[1], rs = respostas[2];
+      setState(() {
+        if (ru.statusCode == 200) _clientes = jsonDecode(ru.body)['usuarios'] ?? [];
+        if (rb.statusCode == 200) {
+          final todos = jsonDecode(rb.body)['barbeiros'] ?? [];
+          _barbeiros = todos.where((b) => !(b['ativo'] == 0 || b['ativo'] == false)).toList();
+        }
+        if (rs.statusCode == 200) _servicos = jsonDecode(rs.body)['servicos'] ?? [];
+        if (_barbeiroId != null && !_barbeiros.any((b) => b['id'].toString() == _barbeiroId)) {
+          _barbeiroId = null;
+        }
+        _carregando = false;
+      });
+      if (_barbeiroId != null) _carregarHorarios();
+    } catch (e) {
+      debugPrint('Erro ao carregar dados do agendamento: $e');
+      if (mounted) setState(() => _carregando = false);
+      _snack('Erro de conexão com o servidor.', erro: true);
+    }
+  }
+
+  Future<void> _carregarHorarios() async {
+    if (_barbeiroId == null) return;
+    setState(() {
+      _carregandoHorarios = true;
+      _horario = null;
+    });
+    try {
+      final resp = await http.get(
+        Uri.parse('${AppConfig.apiUrl}/horarios-disponiveis?barbeiro_id=$_barbeiroId&data=${_fmtApi(_data)}'),
+      );
+      if (!mounted) return;
+      if (resp.statusCode == 200) {
+        final lista = jsonDecode(resp.body) as List<dynamic>;
+        setState(() {
+          _horarios = lista.map((h) => h.toString()).toList();
+          _carregandoHorarios = false;
+        });
+      } else {
+        setState(() {
+          _horarios = [];
+          _carregandoHorarios = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar horários: $e');
+      if (mounted) {
+        setState(() {
+          _horarios = [];
+          _carregandoHorarios = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _escolherData() async {
+    final hoje = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _data,
+      firstDate: DateTime(hoje.year, hoje.month, hoje.day),
+      lastDate: DateTime(2030),
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.dark().copyWith(
+            colorScheme: ColorScheme.dark(primary: _brandRed, onSurface: Colors.white),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null) {
+      setState(() => _data = picked);
+      _carregarHorarios();
+    }
+  }
+
+  Future<void> _escolherCliente() async {
+    final escolhido = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: _cardColor,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => _SeletorClienteSheet(clientes: _clientes),
+    );
+    if (escolhido != null) setState(() => _cliente = escolhido);
+  }
+
+  Future<void> _salvar() async {
+    if (_cliente == null) return _snack('Escolha o cliente.', erro: true);
+    if (_barbeiroId == null) return _snack('Escolha o profissional.', erro: true);
+    if (_servico == null) return _snack('Escolha o serviço.', erro: true);
+    if (_horario == null) return _snack('Escolha o horário.', erro: true);
+
+    setState(() => _salvando = true);
+    try {
+      final resp = await http.post(
+        Uri.parse('${AppConfig.apiUrl}/admin/agendamentos'),
+        headers: AppConfig.adminHeaders,
+        body: jsonEncode({
+          'cliente_id': _cliente!['id'],
+          'barbeiro_id': int.tryParse(_barbeiroId!) ?? 0,
+          'data': _fmtApi(_data),
+          'horario': _horario,
+          'servico': _servico,
+          'tipo_pagamento': _pagamento,
+          'cliente_telefone': _telefoneCtrl.text.trim(),
+        }),
+      );
+      if (!mounted) return;
+      if (resp.statusCode == 201) {
+        _snack('✅ Cliente agendado com sucesso!');
+        Navigator.pop(context, true);
+        return;
+      }
+      String msg = 'Não foi possível agendar.';
+      try {
+        msg = (jsonDecode(resp.body)['mensagem'] ?? msg).toString();
+      } catch (_) {}
+      _snack(msg, erro: true);
+      if (resp.statusCode == 409) _carregarHorarios();
+    } catch (e) {
+      debugPrint('Erro ao agendar cliente: $e');
+      _snack('Erro de conexão com o servidor.', erro: true);
+    } finally {
+      if (mounted) setState(() => _salvando = false);
+    }
+  }
+
+  InputDecoration _decoracao(String label, IconData icone) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: TextStyle(color: _textSecondary),
+      prefixIcon: Icon(icone, color: _brandRed),
+      filled: true,
+      fillColor: _cardColor,
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+    );
+  }
+
+  Widget _campoToque({required IconData icone, required String rotulo, required String valor, required VoidCallback onTap}) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(color: _cardColor, borderRadius: BorderRadius.circular(12)),
+        child: Row(
+          children: [
+            Icon(icone, color: _brandRed, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(rotulo, style: TextStyle(color: _textSecondary, fontSize: 11)),
+                  const SizedBox(height: 2),
+                  Text(valor, style: const TextStyle(color: Colors.white, fontSize: 15), overflow: TextOverflow.ellipsis),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: _textSecondary),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _bgColor,
+      appBar: AppBar(
+        backgroundColor: _cardColor,
+        elevation: 0,
+        title: const Text('AGENDAR CLIENTE', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+      ),
+      body: _carregando
+          ? Center(child: CircularProgressIndicator(color: _brandRed))
+          : ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                _campoToque(
+                  icone: Icons.person_search,
+                  rotulo: 'Cliente',
+                  valor: _cliente == null ? 'Toque para escolher' : (_cliente!['nome'] ?? '').toString(),
+                  onTap: _escolherCliente,
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: _barbeiroId,
+                  isExpanded: true,
+                  dropdownColor: _cardColor,
+                  style: const TextStyle(color: Colors.white, fontSize: 15),
+                  decoration: _decoracao('Profissional', Icons.content_cut),
+                  items: _barbeiros
+                      .map<DropdownMenuItem<String>>((b) => DropdownMenuItem<String>(
+                            value: b['id'].toString(),
+                            child: Text((b['nome'] ?? '').toString(), overflow: TextOverflow.ellipsis),
+                          ))
+                      .toList(),
+                  onChanged: (v) {
+                    setState(() => _barbeiroId = v);
+                    _carregarHorarios();
+                  },
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: _servico,
+                  isExpanded: true,
+                  dropdownColor: _cardColor,
+                  style: const TextStyle(color: Colors.white, fontSize: 15),
+                  decoration: _decoracao('Serviço', Icons.sell_outlined),
+                  items: _servicos
+                      .map<DropdownMenuItem<String>>((s) => DropdownMenuItem<String>(
+                            value: (s['nome'] ?? '').toString(),
+                            child: Text(
+                              '${s['nome']} • R\$ ${(double.tryParse('${s['preco']}') ?? 0).toStringAsFixed(2).replaceAll('.', ',')}',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ))
+                      .toList(),
+                  onChanged: (v) => setState(() => _servico = v),
+                ),
+                const SizedBox(height: 12),
+                _campoToque(
+                  icone: Icons.calendar_month,
+                  rotulo: 'Data',
+                  valor: _fmtBr(_data),
+                  onTap: _escolherData,
+                ),
+                const SizedBox(height: 12),
+                Text('HORÁRIO', style: TextStyle(color: _textSecondary, fontSize: 11, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                if (_barbeiroId == null)
+                  Text('Escolha o profissional para ver os horários livres.', style: TextStyle(color: _textSecondary, fontSize: 12))
+                else if (_carregandoHorarios)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Center(child: CircularProgressIndicator(color: _brandRed)),
+                  )
+                else if (_horarios.isEmpty)
+                  Text('Nenhum horário livre nesta data.', style: TextStyle(color: _textSecondary, fontSize: 12))
+                else
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: _horarios.map((h) {
+                      final ativo = _horario == h;
+                      return ChoiceChip(
+                        label: Text(h, style: TextStyle(color: ativo ? Colors.white : Colors.white70, fontSize: 13)),
+                        selected: ativo,
+                        selectedColor: _brandRed,
+                        backgroundColor: _cardColor,
+                        showCheckmark: false,
+                        onSelected: (_) => setState(() => _horario = h),
+                      );
+                    }).toList(),
+                  ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  value: _pagamento,
+                  isExpanded: true,
+                  dropdownColor: _cardColor,
+                  style: const TextStyle(color: Colors.white, fontSize: 15),
+                  decoration: _decoracao('Forma de pagamento', Icons.payments_outlined),
+                  items: _formasPagamento.entries
+                      .map((e) => DropdownMenuItem<String>(value: e.key, child: Text(e.value)))
+                      .toList(),
+                  onChanged: (v) => setState(() => _pagamento = v ?? 'presencial'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _telefoneCtrl,
+                  keyboardType: TextInputType.phone,
+                  maxLength: 20,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: _decoracao('Telefone (opcional)', Icons.phone_outlined).copyWith(counterText: ''),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  height: 50,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _brandRed,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: _salvando ? null : _salvar,
+                    icon: _salvando
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.check),
+                    label: Text(_salvando ? 'Agendando...' : 'CONFIRMAR AGENDAMENTO',
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ),
+                const SizedBox(height: 24),
+              ],
+            ),
+    );
+  }
+}
+
+class _SeletorClienteSheet extends StatefulWidget {
+  final List<dynamic> clientes;
+  const _SeletorClienteSheet({required this.clientes});
+
+  @override
+  State<_SeletorClienteSheet> createState() => _SeletorClienteSheetState();
+}
+
+class _SeletorClienteSheetState extends State<_SeletorClienteSheet> {
+  String _busca = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final termo = _busca.trim().toLowerCase();
+    final filtrados = widget.clientes.where((c) {
+      if (termo.isEmpty) return true;
+      return (c['nome'] ?? '').toString().toLowerCase().contains(termo) ||
+          (c['email'] ?? '').toString().toLowerCase().contains(termo);
+    }).toList();
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: SizedBox(
+        height: MediaQuery.of(context).size.height * 0.75,
+        child: Column(
+          children: [
+            const SizedBox(height: 12),
+            const Text('Escolher cliente', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: TextField(
+                autofocus: false,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  hintText: 'Buscar por nome ou e-mail',
+                  hintStyle: const TextStyle(color: Color(0xFF9E9E9E)),
+                  prefixIcon: const Icon(Icons.search, color: Color(0xFF9E9E9E)),
+                  filled: true,
+                  fillColor: const Color(0xFF121212),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                ),
+                onChanged: (v) => setState(() => _busca = v),
+              ),
+            ),
+            Expanded(
+              child: filtrados.isEmpty
+                  ? const Center(child: Text('Nenhum cliente encontrado.', style: TextStyle(color: Color(0xFF9E9E9E))))
+                  : ListView.builder(
+                      itemCount: filtrados.length,
+                      itemBuilder: (context, i) {
+                        final c = filtrados[i];
+                        return ListTile(
+                          leading: const CircleAvatar(
+                            backgroundColor: Color(0xFF121212),
+                            child: Icon(Icons.person, color: Color(0xFFCF243E)),
+                          ),
+                          title: Text((c['nome'] ?? '').toString(), style: const TextStyle(color: Colors.white)),
+                          subtitle: Text((c['email'] ?? '').toString(),
+                              style: const TextStyle(color: Color(0xFF9E9E9E), fontSize: 12)),
+                          onTap: () => Navigator.pop(context, Map<String, dynamic>.from(c)),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

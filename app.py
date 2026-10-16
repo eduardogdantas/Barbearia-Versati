@@ -2670,6 +2670,245 @@ def atualizar_status_agendamento(id):
         conn.close()
 
 
+# ==============================================================================
+# PAINEL DE COMISSÕES (intervalo de datas + colaborador)
+# ==============================================================================
+@app.route("/api/admin/comissoes", methods=["GET", "OPTIONS"])
+@admin_required
+def api_admin_comissoes():
+    """Comissões por colaborador num intervalo de datas (conta pelo dia do agendamento)."""
+    hoje = datetime.now().strftime("%Y-%m-%d")
+
+    def _data_valida(valor, padrao):
+        try:
+            return datetime.strptime(str(valor)[:10], "%Y-%m-%d").strftime("%Y-%m-%d")
+        except (ValueError, TypeError):
+            return padrao
+
+    inicio = _data_valida(request.args.get("inicio"), hoje)
+    fim = _data_valida(request.args.get("fim"), hoje)
+    if inicio > fim:
+        inicio, fim = fim, inicio
+    dias = (datetime.strptime(fim, "%Y-%m-%d") - datetime.strptime(inicio, "%Y-%m-%d")).days
+    if dias > 366:
+        return jsonify({"sucesso": False, "mensagem": "Intervalo máximo de 1 ano."}), 400
+
+    filtro_barbeiro = None
+    bruto = (request.args.get("barbeiro_id") or "").strip()
+    if bruto:
+        filtro_barbeiro = parse_int(bruto, 1)
+        if filtro_barbeiro is None:
+            return jsonify({"sucesso": False, "mensagem": "Colaborador inválido."}), 400
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id, nome FROM barbeiros WHERE ativo = 1")
+            barbeiros = {b["id"]: str(b["nome"]).strip() for b in cursor.fetchall()}
+            nomes_idx = {i: n.lower() for i, n in barbeiros.items()}
+
+            cursor.execute("SELECT nome, preco FROM servicos")
+            precos_por_servico = {str(s["nome"]).strip().lower(): float(s["preco"]) for s in cursor.fetchall()}
+
+            cursor.execute("""
+                SELECT bs.barbeiro_id, LOWER(TRIM(s.nome)) AS servico, bs.comissao_percentual
+                FROM barbeiro_servicos bs
+                JOIN servicos s ON s.id = bs.servico_id
+            """)
+            comissoes_cfg = {
+                (r["barbeiro_id"], r["servico"]): float(r["comissao_percentual"] if r["comissao_percentual"] is not None else 40.0)
+                for r in cursor.fetchall()
+            }
+
+            cursor.execute("""
+                SELECT a.id, a.barbeiro_id, a.profissional, a.data, a.horario, a.servico, a.preco,
+                       u.nome AS cliente_nome
+                FROM agendamentos a
+                JOIN usuarios u ON a.cliente_id = u.id
+                WHERE DATE(a.data) BETWEEN %s AND %s
+                  AND LOWER(a.status) IN ('concluido', 'finalizado')
+                ORDER BY a.data ASC, a.horario ASC
+            """, (inicio, fim))
+            linhas = cursor.fetchall()
+
+        def _achar_barbeiro(linha):
+            bid = linha.get("barbeiro_id")
+            if bid in barbeiros:
+                return bid
+            prof = str(linha.get("profissional") or "").strip().lower()
+            if not prof:
+                return None
+            for i, n in nomes_idx.items():
+                if n == prof:
+                    return i
+            for i, n in nomes_idx.items():
+                if n and (n in prof or prof in n):
+                    return i
+            return None
+
+        grupos = {}
+        for l in linhas:
+            bid = _achar_barbeiro(l)
+            if bid is None:  # barbeiro excluído/inativo não aparece
+                continue
+            if filtro_barbeiro is not None and bid != filtro_barbeiro:
+                continue
+
+            serv_chave = str(l.get("servico") or "").strip().lower()
+            valor = float(l.get("preco") or 0)
+            if valor <= 0:
+                valor = precos_por_servico.get(serv_chave, 0.0)
+            pct = comissoes_cfg.get((bid, serv_chave), 40.0)
+            comissao = round(valor * pct / 100.0, 2)
+
+            data_val = l["data"].strftime("%Y-%m-%d") if hasattr(l["data"], "strftime") else str(l["data"])[:10]
+
+            g = grupos.setdefault(bid, {
+                "barbeiro_id": bid, "nome": barbeiros[bid],
+                "qtd": 0, "faturamento": 0.0, "comissao": 0.0,
+                "servicos": {}, "atendimentos": [],
+            })
+            g["qtd"] += 1
+            g["faturamento"] += valor
+            g["comissao"] += comissao
+
+            nome_serv = str(l.get("servico") or "Serviço").strip()
+            sv = g["servicos"].setdefault(nome_serv, {
+                "servico": nome_serv, "qtd": 0, "faturamento": 0.0, "percentual": pct, "comissao": 0.0,
+            })
+            sv["qtd"] += 1
+            sv["faturamento"] += valor
+            sv["comissao"] += comissao
+
+            g["atendimentos"].append({
+                "id": l["id"], "data": data_val, "horario": str(l.get("horario") or ""),
+                "servico": nome_serv, "cliente_nome": l.get("cliente_nome") or "Cliente",
+                "valor": round(valor, 2), "percentual": pct, "comissao": comissao,
+            })
+
+        if filtro_barbeiro is not None and filtro_barbeiro in barbeiros and filtro_barbeiro not in grupos:
+            grupos[filtro_barbeiro] = {
+                "barbeiro_id": filtro_barbeiro, "nome": barbeiros[filtro_barbeiro],
+                "qtd": 0, "faturamento": 0.0, "comissao": 0.0, "servicos": {}, "atendimentos": [],
+            }
+
+        resultado = []
+        for g in grupos.values():
+            g["faturamento"] = round(g["faturamento"], 2)
+            g["comissao"] = round(g["comissao"], 2)
+            g["servicos"] = [
+                {**s, "faturamento": round(s["faturamento"], 2), "comissao": round(s["comissao"], 2)}
+                for s in g["servicos"].values()
+            ]
+            resultado.append(g)
+        resultado.sort(key=lambda x: x["comissao"], reverse=True)
+
+        return jsonify({
+            "sucesso": True,
+            "inicio": inicio,
+            "fim": fim,
+            "total_cortes": sum(g["qtd"] for g in resultado),
+            "total_faturamento": round(sum(g["faturamento"] for g in resultado), 2),
+            "total_comissao": round(sum(g["comissao"] for g in resultado), 2),
+            "barbeiros": resultado,
+        }), 200
+    except Exception as e:
+        app.logger.error("Erro em api_admin_comissoes: %s", e)
+        return jsonify({"sucesso": False, "mensagem": "Erro interno. Tente novamente."}), 500
+    finally:
+        conn.close()
+
+
+# ==============================================================================
+# ADMIN AGENDA UM CLIENTE
+# ==============================================================================
+@app.route("/api/admin/agendamentos", methods=["POST", "OPTIONS"])
+@admin_required
+def api_admin_criar_agendamento():
+    dados = request.get_json(silent=True) or {}
+
+    cliente_id = parse_int(dados.get("cliente_id"), 1)
+    barbeiro_id = parse_int(dados.get("barbeiro_id"), 1)
+    data = str(dados.get("data") or "").strip()
+    horario = str(dados.get("horario") or "").strip()
+    servico = str(dados.get("servico") or "").strip()
+    telefone = str(dados.get("cliente_telefone") or "").strip()
+    tipo_pagamento = str(dados.get("tipo_pagamento") or "presencial").strip().lower()
+    if tipo_pagamento not in TIPOS_PAGAMENTO:
+        tipo_pagamento = "presencial"
+
+    try:
+        momento = datetime.strptime(f"{data} {horario}", "%Y-%m-%d %H:%M")
+    except ValueError:
+        momento = None
+
+    if cliente_id is None:
+        return jsonify({"sucesso": False, "mensagem": "Escolha o cliente."}), 400
+    if barbeiro_id is None or not servico or len(servico) > 100:
+        return jsonify({"sucesso": False, "mensagem": "Escolha o profissional e o serviço."}), 400
+    if momento is None or horario not in HORARIOS_VALIDOS:
+        return jsonify({"sucesso": False, "mensagem": "Data ou horário inválido."}), 400
+    if momento < datetime.now():
+        return jsonify({"sucesso": False, "mensagem": "Esse horário já passou."}), 400
+    if not TELEFONE_RE.match(telefone):
+        return jsonify({"sucesso": False, "mensagem": "Telefone inválido."}), 400
+    if tipo_pagamento in ("plano", "vip") and not cliente_tem_assinatura_ativa(cliente_id):
+        return jsonify({"sucesso": False, "mensagem": "Este cliente não possui assinatura ativa."}), 400
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id FROM usuarios WHERE id = %s", (cliente_id,))
+            if not cursor.fetchone():
+                return jsonify({"sucesso": False, "mensagem": "Cliente não encontrado."}), 404
+
+            cursor.execute("SELECT nome FROM barbeiros WHERE id = %s AND ativo = 1", (barbeiro_id,))
+            barb = cursor.fetchone()
+            cursor.execute("SELECT preco FROM servicos WHERE LOWER(TRIM(nome)) = LOWER(TRIM(%s))", (servico,))
+            serv_db = cursor.fetchone()
+            if not barb or not serv_db:
+                return jsonify({"sucesso": False, "mensagem": "Profissional ou serviço não encontrado."}), 404
+
+            preco = 0.00 if tipo_pagamento in ("plano", "vip") else float(serv_db["preco"])
+
+            # Libera o horário de um agendamento cancelado (a UNIQUE KEY o manteria bloqueado)
+            cursor.execute(
+                "DELETE FROM agendamentos WHERE barbeiro_id = %s AND data = %s AND horario = %s "
+                "AND LOWER(status) = 'cancelado'",
+                (barbeiro_id, data, horario),
+            )
+            cursor.execute(
+                "SELECT id FROM agendamentos WHERE barbeiro_id = %s AND data = %s AND horario = %s AND status != 'cancelado'",
+                (barbeiro_id, data, horario),
+            )
+            if cursor.fetchone():
+                conn.rollback()
+                return jsonify({"sucesso": False, "mensagem": "Este horário já está ocupado com este profissional."}), 409
+
+            try:
+                cursor.execute(
+                    """
+                    INSERT INTO agendamentos
+                    (cliente_id, barbeiro_id, profissional, data, horario, servico, tipo_pagamento, cliente_telefone, preco)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (cliente_id, barbeiro_id, barb["nome"], data, horario, servico, tipo_pagamento, telefone, preco),
+                )
+            except pymysql.err.IntegrityError:
+                conn.rollback()
+                return jsonify({"sucesso": False, "mensagem": "Este horário já está ocupado com este profissional."}), 409
+            novo_id = cursor.lastrowid
+            conn.commit()
+
+        return jsonify({"sucesso": True, "mensagem": "Cliente agendado com sucesso!", "id": novo_id}), 201
+    except Exception as e:
+        conn.rollback()
+        app.logger.error("Erro em api_admin_criar_agendamento: %s", e)
+        return jsonify({"sucesso": False, "mensagem": "Erro interno. Tente novamente."}), 500
+    finally:
+        conn.close()
+
+
 @app.route("/api/admin/cancelar-agendamento/<int:id>", methods=["DELETE"])
 @admin_required
 def api_admin_cancelar_agendamento(id):
