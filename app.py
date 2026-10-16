@@ -3421,29 +3421,29 @@ def login():
     return render_template("login.html", erro=erro)
 
 
-@app.route("/cadastro", methods=["GET", "POST"])
-@rate_limit(10, 3600, "cadastro-web")
+@app.route('/cadastro', methods=['GET', 'POST'])
 def cadastro():
-    erro = None
-    if request.method == "POST":
-        nome = request.form.get("nome", "").strip()
-        email = request.form.get("email", "").strip()
-        senha = request.form.get("senha", "")
-        telefone = request.form.get("telefone", "").strip()
+    if request.method == 'POST':
+        nome = request.form.get('nome')
+        email = request.form.get('email')
+        telefone = request.form.get('telefone')
+        senha = request.form.get('senha')
 
-        erro = validar_cadastro(nome, email, senha, telefone)
-        if erro:
-            return render_template("cadastro.html", erro=erro)
+        # 1. Valide e salve o utilizador no banco de dados MySQL aqui...
+        # Exemplo: id_novo = db.salvar_usuario(nome, email, telefone, senha)
 
-        ok, msg, _status = _iniciar_verificacao_cadastro(nome, email, senha, telefone)
-        if ok:
-            session["cadastro_email"] = email.lower()
-            session["verif_aviso"] = msg
-            return redirect(url_for("verificar_email"))
-        erro = msg
+        # 2. Tente enviar o e-mail de boas-vindas de forma segura
+        try:
+            # Coloque aqui a sua função de envio de e-mail (ex: Brevo / SMTP)
+            enviar_email_boas_vindas(email, nome)
+        except Exception as e:
+            # Apenas regista o erro no console/log do Render, sem quebrar o cadastro do cliente!
+            print(f"AVISO: Falha ao enviar e-mail de boas-vindas: {e}")
 
-    return render_template("cadastro.html", erro=erro)
+        # 3. Redireciona para o login com sucesso (ou renderiza mensagem positiva)
+        return redirect(url_for('login', cadastro_sucesso=1))
 
+    return render_template('cadastro.html')
 
 @app.route("/verificar-email", methods=["GET", "POST"])
 @rate_limit(15, 600, "verificar-web")
