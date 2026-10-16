@@ -3844,6 +3844,29 @@ def api_cliente_agendamentos():
             return jsonify({'sucesso': True, 'agendamentos': agendamentos}), 200
     finally:
         conn.close()
+@app.route("/api/admin/agendamentos/<int:id>/cancelar", methods=["POST", "PUT", "OPTIONS"])
+@admin_required
+def api_admin_cancelar_agendamento_status(id):
+    if request.method == "OPTIONS":
+        return "", 200
+        
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "UPDATE agendamentos SET status = 'cancelado', concluido_em = NULL WHERE id = %s",
+                (id,)
+            )
+            conn.commit()
+            if cursor.rowcount > 0:
+                return jsonify({"sucesso": True, "mensagem": "Agendamento cancelado com sucesso!"}), 200
+        return jsonify({"sucesso": False, "mensagem": "Agendamento não encontrado."}), 404
+    except Exception as e:
+        conn.rollback()
+        app.logger.error("Erro em api_admin_cancelar_agendamento_status: %s", e)
+        return jsonify({"sucesso": False, "mensagem": "Erro interno. Tente novamente."}), 500
+    finally:
+        conn.close()  
 @app.route("/api/horarios-disponiveis")
 def horarios_disponiveis():
     barbeiro_id = parse_int(request.args.get("barbeiro_id", "1"), 1)

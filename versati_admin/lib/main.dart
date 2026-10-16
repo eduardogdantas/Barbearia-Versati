@@ -4442,7 +4442,7 @@ class _GerenciarPlanosScreenState extends State<GerenciarPlanosScreen> {
               if (nomeCtrl.text.trim().isNotEmpty && preco != null) {
                 Navigator.pop(ctx);
                 if (editando) {
-                  _atualizarPlanoAPI(planoExistente!['id'] as int, nomeCtrl.text.trim(), descricaoCtrl.text.trim(), preco, ordem);
+                  _atualizarPlanoAPI(planoExistente['id'] as int, nomeCtrl.text.trim(), descricaoCtrl.text.trim(), preco, ordem);
                 } else {
                   _cadastrarPlanoAPI(nomeCtrl.text.trim(), descricaoCtrl.text.trim(), preco, ordem);
                 }
@@ -4497,7 +4497,7 @@ class _GerenciarPlanosScreenState extends State<GerenciarPlanosScreen> {
                         decoration: BoxDecoration(
                           color: _cardDark,
                           borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: ativo ? Colors.white12 : Colors.white10.withOpacity(0.3)),
+                          border: Border.all(color: ativo ? Colors.white12 : Colors.white10.withValues(alpha: 0.3)),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -4624,6 +4624,20 @@ class _AgendaDetalhesScreenState extends State<AgendaDetalhesScreen> {
     _listaAgendamentos = List.from(widget.agendamentos);
   }
 
+  Widget _buildAvatarBarbeiro(String? fotoUrl, {double radius = 16}) {
+    if (fotoUrl != null && fotoUrl.isNotEmpty) {
+      return CircleAvatar(
+        radius: radius,
+        backgroundImage: NetworkImage(fotoUrl),
+      );
+    }
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: _brandRed,
+      child: const Icon(Icons.person, color: Colors.white, size: 18),
+    );
+  }
+
   Future<void> _marcarComoConcluido(int agendamentoId) async {
     try {
       final response = await http.post(
@@ -4642,6 +4656,34 @@ class _AgendaDetalhesScreenState extends State<AgendaDetalhesScreen> {
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Erro ao atualizar status.'), backgroundColor: Colors.red),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Erro de conexão com o servidor.'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  Future<void> _cancelarAgendamento(int agendamentoId) async {
+    try {
+      final response = await http.post(
+        Uri.parse('${AppConfig.apiUrl}/admin/agendamentos/$agendamentoId/cancelar'),
+        headers: AppConfig.adminHeaders,
+      );
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        setState(() {
+          _listaAgendamentos.removeWhere((a) => a['id'] == agendamentoId);
+        });
+        widget.onAtualizar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('🚫 Agendamento cancelado com sucesso!'), backgroundColor: Colors.orange),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Erro ao cancelar agendamento.'), backgroundColor: Colors.red),
         );
       }
     } catch (e) {
@@ -4712,6 +4754,7 @@ class _AgendaDetalhesScreenState extends State<AgendaDetalhesScreen> {
                   final statusAtual = (ag['status'] ?? 'confirmado').toString().toLowerCase();
                   final statusColor = _getStatusColor(ag['status'] ?? 'Confirmado');
                   final podeConcluir = statusAtual != 'concluido' && statusAtual != 'finalizado' && statusAtual != 'cancelado';
+                  final podeCancelar = statusAtual != 'cancelado' && statusAtual != 'concluido' && statusAtual != 'finalizado';
 
                   return Container(
                     margin: const EdgeInsets.only(bottom: 16),
@@ -4779,7 +4822,7 @@ class _AgendaDetalhesScreenState extends State<AgendaDetalhesScreen> {
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: Colors.teal,
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
                                   ),
                                   onPressed: () => showDialog(
                                     context: context,
@@ -4806,10 +4849,52 @@ class _AgendaDetalhesScreenState extends State<AgendaDetalhesScreen> {
                                       ],
                                     ),
                                   ),
-                                  icon: const Icon(Icons.check, size: 16, color: Colors.white),
+                                  icon: const Icon(Icons.check, size: 14, color: Colors.white),
                                   label: const Text(
-                                    'Marcar Concluído',
-                                    style: TextStyle(color: Colors.white, fontSize: 12),
+                                    'Concluir',
+                                    style: TextStyle(color: Colors.white, fontSize: 11),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                            if (podeConcluir && podeCancelar) const SizedBox(width: 6),
+                            if (podeCancelar)
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: _brandRed,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+                                  ),
+                                  onPressed: () => showDialog(
+                                    context: context,
+                                    builder: (dialogCtx) => AlertDialog(
+                                      backgroundColor: _cardColor,
+                                      title: const Text('Cancelar agendamento?', style: TextStyle(color: Colors.white, fontSize: 15)),
+                                      content: Text(
+                                        'Deseja realmente cancelar o atendimento de ${ag['cliente_nome'] ?? 'cliente'} às ${ag['horario'] ?? ''}?',
+                                        style: TextStyle(color: _textSecondary, fontSize: 13),
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () => Navigator.pop(dialogCtx),
+                                          child: const Text('Voltar', style: TextStyle(color: Colors.grey)),
+                                        ),
+                                        ElevatedButton(
+                                          style: ElevatedButton.styleFrom(backgroundColor: _brandRed),
+                                          onPressed: () {
+                                            Navigator.pop(dialogCtx);
+                                            _cancelarAgendamento(ag['id']);
+                                          },
+                                          child: const Text('Sim, cancelar', style: TextStyle(color: Colors.white)),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  icon: const Icon(Icons.close, size: 14, color: Colors.white),
+                                  label: const Text(
+                                    'Cancelar',
+                                    style: TextStyle(color: Colors.white, fontSize: 11),
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
