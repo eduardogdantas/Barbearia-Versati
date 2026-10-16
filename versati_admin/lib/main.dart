@@ -6839,24 +6839,50 @@ class _ComissoesScreenState extends State<ComissoesScreen> {
     final paga = _num(_dados?['total_paga']);
     final pendente = _num(_dados?['total_pendente']);
     final cortes = (_dados?['total_cortes'] ?? 0).toString();
+
+    int qtdPend = 0;
+    int qtdPaga = 0;
+    for (final g in ((_dados?['barbeiros'] ?? []) as List<dynamic>)) {
+      for (final a in ((g['atendimentos'] ?? []) as List<dynamic>)) {
+        if (a['pago'] == true) {
+          qtdPaga++;
+        } else {
+          qtdPend++;
+        }
+      }
+    }
+
+    final List<Widget> linhas;
+    if (_situacao == 'pendentes') {
+      linhas = [
+        _linhaResumo('Atendimentos pendentes', '$qtdPend', Colors.white),
+        _linhaResumo('Comissões pendentes', _moeda(pendente), Colors.orangeAccent, destaque: true),
+      ];
+    } else if (_situacao == 'pagas') {
+      linhas = [
+        _linhaResumo('Atendimentos pagos', '$qtdPaga', Colors.white),
+        _linhaResumo('Comissões pagas', _moeda(paga), Colors.greenAccent, destaque: true),
+      ];
+    } else {
+      linhas = [
+        _linhaResumo('Cortes finalizados', cortes, Colors.white),
+        _linhaResumo('Faturamento', _moeda(totalFat), Colors.white),
+        _linhaResumo('Comissões do período', _moeda(totalCom), Colors.white),
+        _linhaResumo('Comissões pagas', _moeda(paga), Colors.greenAccent),
+        _linhaResumo('Comissões pendentes', _moeda(pendente), Colors.orangeAccent, destaque: true),
+        const Divider(color: Colors.white10, height: 16),
+        _linhaResumo('Fica na barbearia', _moeda(totalFat - totalCom), Colors.greenAccent),
+      ];
+    }
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: _cardColor,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.orangeAccent.withOpacity(0.3)),
+        border: Border.all(color: (_situacao == 'pagas' ? Colors.greenAccent : Colors.orangeAccent).withOpacity(0.3)),
       ),
-      child: Column(
-        children: [
-          _linhaResumo('Cortes finalizados', cortes, Colors.white),
-          _linhaResumo('Faturamento', _moeda(totalFat), Colors.white),
-          _linhaResumo('Comissões do período', _moeda(totalCom), Colors.white),
-          _linhaResumo('Comissões pagas', _moeda(paga), Colors.greenAccent),
-          _linhaResumo('Comissões pendentes', _moeda(pendente), Colors.orangeAccent, destaque: true),
-          const Divider(color: Colors.white10, height: 16),
-          _linhaResumo('Fica na barbearia', _moeda(totalFat - totalCom), Colors.greenAccent),
-        ],
-      ),
+      child: Column(children: linhas),
     );
   }
 
@@ -6901,7 +6927,9 @@ class _ComissoesScreenState extends State<ComissoesScreen> {
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
-                  '${a['servico'] ?? ''} • ${_moeda(_num(a['valor']))} • ${_pct(_num(a['percentual']))}%',
+                  _situacao == 'todas'
+                      ? '${a['servico'] ?? ''} • ${_moeda(_num(a['valor']))} • ${_pct(_num(a['percentual']))}%'
+                      : '${a['servico'] ?? ''} • ${_pct(_num(a['percentual']))}% de comissão',
                   style: TextStyle(color: _textSecondary, fontSize: 11),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -6940,11 +6968,22 @@ class _ComissoesScreenState extends State<ComissoesScreen> {
   }
 
   Widget _buildCardBarbeiro(Map<String, dynamic> g) {
-    final servicos = (g['servicos'] ?? []) as List<dynamic>;
     final todos = (g['atendimentos'] ?? []) as List<dynamic>;
     final visiveis = _filtrarAtendimentos(todos);
     final pendentesVisiveis = visiveis.where((a) => a['pago'] != true).toList();
     final pendentesTodas = todos.where((a) => a['pago'] != true).toList();
+    final qtdPagas = todos.length - pendentesTodas.length;
+
+    // Serviços calculados só com o que está visível (pendentes ou pagas, conforme o filtro)
+    final Map<String, Map<String, dynamic>> porServico = {};
+    for (final a in visiveis) {
+      final nomeServ = (a['servico'] ?? 'Serviço').toString();
+      final sv = porServico.putIfAbsent(nomeServ, () => {'qtd': 0, 'fat': 0.0, 'com': 0.0, 'pct': _num(a['percentual'])});
+      sv['qtd'] = (sv['qtd'] as int) + 1;
+      sv['fat'] = (sv['fat'] as double) + _num(a['valor']);
+      sv['com'] = (sv['com'] as double) + _num(a['comissao']);
+      sv['pct'] = _num(a['percentual']);
+    }
     final selecionadosDele = todos.where((a) => a['pago'] != true && _selecionados.contains(_idDe(a))).toList();
     final totalSelecionado = selecionadosDele.fold<double>(0, (s, a) => s + _num(a['comissao']));
     final pendente = _num(g['comissao_pendente']);
@@ -6974,19 +7013,23 @@ class _ComissoesScreenState extends State<ComissoesScreen> {
             overflow: TextOverflow.ellipsis,
           ),
           subtitle: Text(
-            '${g['qtd']} corte(s) • Faturou ${_moeda(_num(g['faturamento']))}\nJá pago ${_moeda(paga)}',
+            _situacao == 'pendentes'
+                ? '${pendentesTodas.length} atendimento(s) pendente(s)'
+                : (_situacao == 'pagas'
+                    ? '$qtdPagas atendimento(s) pago(s)'
+                    : '${g['qtd']} corte(s) • Faturou ${_moeda(_num(g['faturamento']))}\nJá pago ${_moeda(paga)}'),
             style: TextStyle(color: _textSecondary, fontSize: 11),
           ),
           trailing: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text(pendente > 0 ? 'PENDENTE' : 'EM DIA',
+              Text(_situacao == 'pagas' ? 'PAGO' : (pendente > 0 ? 'PENDENTE' : 'EM DIA'),
                   style: TextStyle(color: _textSecondary, fontSize: 9, fontWeight: FontWeight.bold)),
               Text(
-                _moeda(pendente),
+                _moeda(_situacao == 'pagas' ? paga : pendente),
                 style: TextStyle(
-                  color: pendente > 0 ? Colors.orangeAccent : Colors.greenAccent,
+                  color: (_situacao == 'pagas' || pendente <= 0) ? Colors.greenAccent : Colors.orangeAccent,
                   fontWeight: FontWeight.bold,
                   fontSize: 14,
                 ),
@@ -7054,7 +7097,8 @@ class _ComissoesScreenState extends State<ComissoesScreen> {
                   child: Text('POR SERVIÇO', style: TextStyle(color: _textSecondary, fontSize: 10, fontWeight: FontWeight.bold)),
                 ),
               ),
-              ...servicos.map((sv) {
+              ...porServico.entries.map((e) {
+                final sv = e.value;
                 return Padding(
                   padding: const EdgeInsets.only(top: 8, left: 8),
                   child: Row(
@@ -7064,18 +7108,24 @@ class _ComissoesScreenState extends State<ComissoesScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text((sv['servico'] ?? '').toString(),
+                            Text(e.key,
                                 style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
                             Text(
-                              '${sv['qtd']}x • ${_moeda(_num(sv['faturamento']))} • ${_pct(_num(sv['percentual']))}% de comissão',
+                              _situacao == 'todas'
+                                  ? '${sv['qtd']}x • ${_moeda(sv['fat'] as double)} • ${_pct(sv['pct'] as double)}% de comissão'
+                                  : '${sv['qtd']}x • ${_pct(sv['pct'] as double)}% de comissão',
                               style: TextStyle(color: _textSecondary, fontSize: 11),
                             ),
                           ],
                         ),
                       ),
                       const SizedBox(width: 8),
-                      Text(_moeda(_num(sv['comissao'])),
-                          style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 12)),
+                      Text(_moeda(sv['com'] as double),
+                          style: TextStyle(
+                            color: _situacao == 'pagas' ? Colors.greenAccent : Colors.orangeAccent,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          )),
                     ],
                   ),
                 );
