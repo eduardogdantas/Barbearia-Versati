@@ -6623,8 +6623,24 @@ class _ComissoesScreenState extends State<ComissoesScreen> {
         msg = (jsonDecode(resp.body)['mensagem'] ?? msgErro).toString();
       } catch (_) {}
       if (resp.statusCode == 200) {
-        _snack('✅ $msg');
         await _carregar();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ $msg'),
+            backgroundColor: Colors.teal,
+            action: rota == 'baixa'
+                ? SnackBarAction(
+                    label: 'VER PAGAS',
+                    textColor: Colors.white,
+                    onPressed: () => setState(() {
+                      _situacao = 'pagas';
+                      _selecionados.clear();
+                    }),
+                  )
+                : null,
+          ),
+        );
       } else {
         _snack('❌ $msg', erro: true);
       }
@@ -6844,7 +6860,7 @@ class _ComissoesScreenState extends State<ComissoesScreen> {
     );
   }
 
-  Widget _linhaAtendimento(dynamic a) {
+  Widget _linhaAtendimento(dynamic a, String nomeBarbeiro) {
     final pago = a['pago'] == true;
     final id = _idDe(a);
     return Padding(
@@ -6912,7 +6928,12 @@ class _ComissoesScreenState extends State<ComissoesScreen> {
               onPressed: _processando ? null : () => _desfazerBaixa(a),
             )
           else
-            const SizedBox(width: 8),
+            IconButton(
+              tooltip: 'Dar baixa',
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.price_check, color: Colors.tealAccent, size: 20),
+              onPressed: _processando ? null : () => _darBaixa(nomeBarbeiro, [a]),
+            ),
         ],
       ),
     );
@@ -6923,6 +6944,7 @@ class _ComissoesScreenState extends State<ComissoesScreen> {
     final todos = (g['atendimentos'] ?? []) as List<dynamic>;
     final visiveis = _filtrarAtendimentos(todos);
     final pendentesVisiveis = visiveis.where((a) => a['pago'] != true).toList();
+    final pendentesTodas = todos.where((a) => a['pago'] != true).toList();
     final selecionadosDele = todos.where((a) => a['pago'] != true && _selecionados.contains(_idDe(a))).toList();
     final totalSelecionado = selecionadosDele.fold<double>(0, (s, a) => s + _num(a['comissao']));
     final pendente = _num(g['comissao_pendente']);
@@ -6935,7 +6957,9 @@ class _ComissoesScreenState extends State<ComissoesScreen> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.white10),
       ),
-      child: Theme(
+      child: Column(
+        children: [
+      Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           key: PageStorageKey('comissao-${g['barbeiro_id']}'),
@@ -7021,37 +7045,7 @@ class _ComissoesScreenState extends State<ComissoesScreen> {
                   ),
                 )
               else
-                ...visiveis.map(_linhaAtendimento),
-              if (pendentesVisiveis.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Padding(
-                  padding: const EdgeInsets.only(left: 8),
-                  child: SizedBox(
-                    width: double.infinity,
-                    height: 44,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.teal,
-                        foregroundColor: Colors.white,
-                        disabledBackgroundColor: Colors.white10,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                      onPressed: (_processando || selecionadosDele.isEmpty)
-                          ? null
-                          : () => _darBaixa((g['nome'] ?? '').toString(), selecionadosDele),
-                      icon: _processando
-                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                          : const Icon(Icons.price_check, size: 18),
-                      label: Text(
-                        selecionadosDele.isEmpty
-                            ? 'Marque as comissões para dar baixa'
-                            : 'DAR BAIXA (${selecionadosDele.length}) • ${_moeda(totalSelecionado)}',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+                ...visiveis.map((a) => _linhaAtendimento(a, (g['nome'] ?? '').toString())),
               const SizedBox(height: 14),
               Padding(
                 padding: const EdgeInsets.only(left: 8),
@@ -7090,12 +7084,63 @@ class _ComissoesScreenState extends State<ComissoesScreen> {
           ],
         ),
       ),
+      if (pendentesTodas.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.teal,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onPressed: _processando ? null : () => _darBaixa((g['nome'] ?? '').toString(), pendentesTodas),
+                  icon: const Icon(Icons.price_check, size: 18),
+                  label: Text(
+                    'DAR BAIXA EM TUDO • ${_moeda(pendente)}',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+              if (selecionadosDele.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Colors.teal),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    onPressed: _processando ? null : () => _darBaixa((g['nome'] ?? '').toString(), selecionadosDele),
+                    icon: const Icon(Icons.checklist, size: 18, color: Colors.tealAccent),
+                    label: Text(
+                      'SELECIONADAS (${selecionadosDele.length}) • ${_moeda(totalSelecionado)}',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.tealAccent),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        ],
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final lista = ((_dados?['barbeiros'] ?? []) as List<dynamic>);
+    final todosColab = ((_dados?['barbeiros'] ?? []) as List<dynamic>);
+    final lista = todosColab.where((g) {
+      if (_situacao == 'pagas') return _num(g['comissao_paga']) > 0;
+      if (_situacao == 'pendentes') return _num(g['comissao_pendente']) > 0;
+      return true;
+    }).toList();
     return Scaffold(
       backgroundColor: _bgColor,
       appBar: AppBar(
@@ -7143,7 +7188,12 @@ class _ComissoesScreenState extends State<ComissoesScreen> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(color: _cardColor, borderRadius: BorderRadius.circular(12)),
-                  child: Text('Nenhum corte finalizado neste período.', style: TextStyle(color: _textSecondary, fontSize: 12)),
+                  child: Text(
+                    _situacao == 'pagas'
+                        ? 'Nenhuma comissão paga neste período.'
+                        : (_situacao == 'pendentes' ? 'Nenhuma comissão pendente neste período.' : 'Nenhum corte finalizado neste período.'),
+                    style: TextStyle(color: _textSecondary, fontSize: 12),
+                  ),
                 )
               else
                 ...lista.map((g) => _buildCardBarbeiro(Map<String, dynamic>.from(g))),
