@@ -1267,227 +1267,6 @@ class _FinanceiroViewState extends State<FinanceiroView> {
     return "${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}";
   }
 
-  // ---------------------------------------------------------------------------
-  // COMISSÕES DOS BARBEIROS
-  // ---------------------------------------------------------------------------
-  String _comissaoPeriodo = 'dia'; // 'dia' | 'semana' | 'mes'
-
-  double _numItem(dynamic v) => double.tryParse('${v ?? 0}') ?? 0;
-
-  String _moeda(double v) => 'R\$ ${v.toStringAsFixed(2).replaceAll('.', ',')}';
-
-  String _pctTxt(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
-
-  Widget _linhaComissao(dynamic item) {
-    if (item['comissao_valor'] == null) return const SizedBox.shrink();
-    final pct = _numItem(item['comissao_percentual']);
-    final val = _numItem(item['comissao_valor']);
-    return Padding(
-      padding: const EdgeInsets.only(top: 2),
-      child: Text(
-        'Comissão ${_pctTxt(pct)}% • ${_moeda(val)}',
-        style: const TextStyle(color: Colors.orangeAccent, fontSize: 11, fontWeight: FontWeight.w600),
-        overflow: TextOverflow.ellipsis,
-      ),
-    );
-  }
-
-  List<dynamic> get _baseComissao {
-    if (_comissaoPeriodo == 'semana') return _semanalVisiveis;
-    if (_comissaoPeriodo == 'mes') return _mensalVisiveis;
-    return _finalizadosVisiveis;
-  }
-
-  String get _rotuloPeriodoComissao {
-    if (_comissaoPeriodo == 'semana') return 'Semana $_intervaloSemana';
-    if (_comissaoPeriodo == 'mes') return 'Mês $_intervaloMes';
-    return _dataFiltro == null ? 'Hoje' : 'Dia ${_formatarDataCurta(_dataFiltro!)}';
-  }
-
-  Map<String, Map<String, dynamic>> _agruparComissoes() {
-    final Map<String, Map<String, dynamic>> porBarbeiro = {};
-    for (final item in _baseComissao) {
-      final nome = (item['profissional'] ?? 'Sem barbeiro').toString().trim();
-      if (_nomesExBarbeiros.contains(nome.toLowerCase())) continue; // ex-barbeiro não aparece nas comissões
-      final servico = (item['servico'] ?? 'Serviço').toString().trim();
-      final valor = item['valor_num'] != null ? _numItem(item['valor_num']) : _valorDoItem(item);
-      final comissao = _numItem(item['comissao_valor']);
-      final pct = _numItem(item['comissao_percentual']);
-
-      final b = porBarbeiro.putIfAbsent(nome, () => {'qtd': 0, 'fat': 0.0, 'com': 0.0, 'servicos': <String, Map<String, dynamic>>{}});
-      b['qtd'] = (b['qtd'] as int) + 1;
-      b['fat'] = (b['fat'] as double) + valor;
-      b['com'] = (b['com'] as double) + comissao;
-
-      final servicos = b['servicos'] as Map<String, Map<String, dynamic>>;
-      final sv = servicos.putIfAbsent(servico, () => {'qtd': 0, 'fat': 0.0, 'com': 0.0, 'pct': pct});
-      sv['qtd'] = (sv['qtd'] as int) + 1;
-      sv['fat'] = (sv['fat'] as double) + valor;
-      sv['com'] = (sv['com'] as double) + comissao;
-      sv['pct'] = pct;
-    }
-    return porBarbeiro;
-  }
-
-  dynamic _fotoDoBarbeiro(String nome) {
-    for (final b in _barbeirosFiltro) {
-      if ((b['nome'] ?? '').toString().trim().toLowerCase() == nome.toLowerCase()) return b['foto_url'];
-    }
-    return null;
-  }
-
-  Widget _chipPeriodoComissao(String valor, String label) {
-    final ativo = _comissaoPeriodo == valor;
-    return Padding(
-      padding: const EdgeInsets.only(left: 6),
-      child: InkWell(
-        onTap: () => setState(() => _comissaoPeriodo = valor),
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          decoration: BoxDecoration(
-            color: ativo ? _brandRed.withOpacity(0.2) : _cardDark,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: ativo ? _brandRed : Colors.white10),
-          ),
-          child: Text(label, style: TextStyle(color: ativo ? Colors.white : _textSecondary, fontSize: 11, fontWeight: FontWeight.bold)),
-        ),
-      ),
-    );
-  }
-
-  Widget _resumoLinha(String rotulo, String valor, Color cor, {bool destaque = false}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(rotulo, style: TextStyle(color: _textSecondary, fontSize: destaque ? 13 : 12, fontWeight: destaque ? FontWeight.bold : FontWeight.normal)),
-          Text(valor, style: TextStyle(color: cor, fontSize: destaque ? 15 : 13, fontWeight: FontWeight.bold)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSecaoComissoes() {
-    final grupos = _agruparComissoes();
-    final nomes = grupos.keys.toList()
-      ..sort((a, b) => (grupos[b]!['com'] as double).compareTo(grupos[a]!['com'] as double));
-    final double totalFat = grupos.values.fold<double>(0, (s, g) => s + (g['fat'] as double));
-    final double totalCom = grupos.values.fold<double>(0, (s, g) => s + (g['com'] as double));
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const Expanded(
-              child: Text('Comissões dos Barbeiros', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-            ),
-            _chipPeriodoComissao('dia', 'Dia'),
-            _chipPeriodoComissao('semana', 'Semana'),
-            _chipPeriodoComissao('mes', 'Mês'),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Text(_rotuloPeriodoComissao, style: TextStyle(color: _textSecondary, fontSize: 12)),
-        const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: _cardDark,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.orangeAccent.withOpacity(0.3)),
-          ),
-          child: Column(
-            children: [
-              _resumoLinha('Faturamento (cortes finalizados)', _moeda(totalFat), Colors.white),
-              _resumoLinha('Comissões a pagar', _moeda(totalCom), Colors.orangeAccent),
-              const Divider(color: Colors.white10, height: 16),
-              _resumoLinha('Fica na barbearia', _moeda(totalFat - totalCom), Colors.greenAccent, destaque: true),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        if (nomes.isEmpty)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(color: _cardDark, borderRadius: BorderRadius.circular(12)),
-            child: Text('Nenhum corte finalizado neste período.', style: TextStyle(color: _textSecondary, fontSize: 12)),
-          )
-        else
-          ...nomes.map((nome) {
-            final g = grupos[nome]!;
-            final servicos = g['servicos'] as Map<String, Map<String, dynamic>>;
-            return Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              decoration: BoxDecoration(
-                color: _cardDark,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.white10),
-              ),
-              child: Theme(
-                data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                child: ExpansionTile(
-                  tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-                  childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                  iconColor: _textSecondary,
-                  collapsedIconColor: _textSecondary,
-                  leading: _buildAvatarBarbeiro(_fotoDoBarbeiro(nome), radius: 18),
-                  title: Text(nome, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14), overflow: TextOverflow.ellipsis),
-                  subtitle: Text(
-                    '${g['qtd']} corte(s) • Faturou ${_moeda(g['fat'] as double)}',
-                    style: TextStyle(color: _textSecondary, fontSize: 11),
-                  ),
-                  trailing: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text('A RECEBER', style: TextStyle(color: _textSecondary, fontSize: 9, fontWeight: FontWeight.bold)),
-                      Text(_moeda(g['com'] as double), style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 14)),
-                    ],
-                  ),
-                  children: servicos.entries.map((e) {
-                    final sv = e.value;
-                    return Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(e.key, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
-                                Text(
-                                  '${sv['qtd']}x • ${_moeda(sv['fat'] as double)} • ${_pctTxt(sv['pct'] as double)}% de comissão',
-                                  style: TextStyle(color: _textSecondary, fontSize: 11),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(_moeda(sv['com'] as double), style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 12)),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-            );
-          }),
-        Padding(
-          padding: const EdgeInsets.only(top: 2),
-          child: Text(
-            'Comissão calculada sobre os serviços (percentual definido na aba Comissões de cada barbeiro).',
-            style: TextStyle(color: _textSecondary, fontSize: 10),
-          ),
-        ),
-      ],
-    );
-  }
-
   // Card pequeno e visível dentro do painel para escolher a data da semana ou do mês
   Widget _seletorPeriodoSheet(String tipo, StateSetter setSheet) {
     final bool semana = tipo == 'semana';
@@ -1652,7 +1431,6 @@ class _FinanceiroViewState extends State<FinanceiroView> {
                                             'Data: ${item['data'] ?? '--/--'} • Hora: ${item['horario'] ?? '--:--'} • Barbeiro: ${item['profissional'] ?? ''}',
                                             style: TextStyle(color: _textSecondary, fontSize: 11),
                                           ),
-                                          _linhaComissao(item),
                                         ],
                                       ),
                                     ),
@@ -1778,33 +1556,6 @@ class _FinanceiroViewState extends State<FinanceiroView> {
                   ),
                   const SizedBox(height: 24),
 
-                  InkWell(
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const ComissoesScreen()),
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                      decoration: BoxDecoration(
-                        color: _cardDark,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.orangeAccent.withOpacity(0.3)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.payments_outlined, color: Colors.orangeAccent, size: 20),
-                          const SizedBox(width: 10),
-                          const Expanded(
-                            child: Text('Ver comissões dos barbeiros',
-                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)),
-                          ),
-                          Icon(Icons.chevron_right, color: _textSecondary),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
 
                   const Text('Serviços Mais Solicitados', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 12),
@@ -1992,7 +1743,6 @@ class _FinanceiroViewState extends State<FinanceiroView> {
                         style: const TextStyle(color: Colors.white54, fontSize: 11),
                         overflow: TextOverflow.ellipsis,
                       ),
-                      _linhaComissao(item),
                     ],
                   ),
                 ),
@@ -2566,8 +2316,8 @@ class _GerenciarUsuariosScreenState extends State<GerenciarUsuariosScreen> {
 
               try {
                 final response = await http.post(
-                  Uri.parse('${AppConfig.apiUrl}/cadastro'),
-                  headers: {'Content-Type': 'application/json'},
+                  Uri.parse('${AppConfig.apiUrl}/admin/usuarios'),
+                  headers: AppConfig.adminHeaders,
                   body: jsonEncode({
                     'nome': nome,
                     'email': email,
@@ -3590,7 +3340,10 @@ class _GerenciarAssinaturasScreenState extends State<GerenciarAssinaturasScreen>
                               Color corStatus = isAtivo ? Colors.greenAccent : _brandRed;
                               String textoStatus = isAtivo ? 'ATIVO' : 'CANCELADO';
 
-                              return Container(
+                              return InkWell(
+                                onTap: () => _abrirDetalhesAssinatura(p),
+                                borderRadius: BorderRadius.circular(12),
+                                child: Container(
                                 margin: const EdgeInsets.only(bottom: 12),
                                 padding: const EdgeInsets.all(16),
                                 decoration: BoxDecoration(
@@ -3667,6 +3420,7 @@ class _GerenciarAssinaturasScreenState extends State<GerenciarAssinaturasScreen>
                                       ],
                                     ),
                                   ],
+                                ),
                                 ),
                               );
                             },
@@ -3861,7 +3615,10 @@ class _GerenciarAssinaturasScreenState extends State<GerenciarAssinaturasScreen>
     Color corStatus = isAtivo ? Colors.greenAccent : Colors.orangeAccent;
     String textoStatus = isAtivo ? 'ATIVO' : 'VENCIDO / SALDO INSUFICIENTE';
 
-    return Container(
+    return InkWell(
+      onTap: () => _abrirDetalhesAssinatura(p),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -3947,6 +3704,137 @@ class _GerenciarAssinaturasScreenState extends State<GerenciarAssinaturasScreen>
           ),
         ],
       ),
+      ),
+    );
+  }
+
+  String _txtOuTraco(dynamic v) {
+    final s = (v ?? '').toString().trim();
+    return (s.isEmpty || s == 'null') ? '—' : s;
+  }
+
+  String _situacaoValidade(String validade) {
+    final p = validade.split('/');
+    if (p.length != 3) return '—';
+    final d = int.tryParse(p[0]);
+    final m = int.tryParse(p[1]);
+    final a = int.tryParse(p[2]);
+    if (d == null || m == null || a == null) return '—';
+    final hoje = DateTime.now();
+    final dias = DateTime(a, m, d).difference(DateTime(hoje.year, hoje.month, hoje.day)).inDays;
+    if (dias > 0) return 'Vence em $dias dia(s)';
+    if (dias == 0) return 'Vence hoje';
+    return 'Venceu há ${-dias} dia(s)';
+  }
+
+  Widget _linhaDetalhe(IconData icone, String rotulo, String valor, {Color? corValor}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icone, color: _brandRed, size: 18),
+          const SizedBox(width: 10),
+          Expanded(flex: 4, child: Text(rotulo, style: TextStyle(color: _textSecondary, fontSize: 12))),
+          Expanded(
+            flex: 6,
+            child: SelectableText(
+              valor,
+              textAlign: TextAlign.right,
+              style: TextStyle(color: corValor ?? Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tituloSecaoDetalhe(String texto) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 14, bottom: 2),
+      child: Text(texto, style: TextStyle(color: _textSecondary, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+    );
+  }
+
+  void _abrirDetalhesAssinatura(dynamic p) {
+    final st = (p['status'] ?? '').toString().toLowerCase();
+    final Color cor = st == 'ativo' ? Colors.greenAccent : (st == 'vencido' ? Colors.orangeAccent : _brandRed);
+    final String textoStatus = st == 'ativo' ? 'ATIVA' : (st == 'vencido' ? 'VENCIDA' : 'CANCELADA');
+    final preco = double.tryParse('${p['preco']}') ?? 0;
+    final validade = (p['validade'] ?? '').toString();
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: _cardDark,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) {
+        return SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _txtOuTraco(p['nome_plano'] ?? p['nome']),
+                        style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(color: cor.withOpacity(0.15), borderRadius: BorderRadius.circular(6)),
+                      child: Text(textoStatus, style: TextStyle(color: cor, fontSize: 11, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+                _tituloSecaoDetalhe('CLIENTE'),
+                _linhaDetalhe(Icons.person_outline, 'Nome', _txtOuTraco(p['cliente_nome'])),
+                _linhaDetalhe(Icons.email_outlined, 'E-mail', _txtOuTraco(p['cliente_email'])),
+                _linhaDetalhe(Icons.phone_outlined, 'Telefone', _txtOuTraco(p['cliente_telefone'])),
+                _linhaDetalhe(Icons.event_available_outlined, 'Cliente desde', _txtOuTraco(p['cliente_desde'])),
+                _tituloSecaoDetalhe('PLANO'),
+                _linhaDetalhe(Icons.card_membership, 'Plano', _txtOuTraco(p['nome_plano'] ?? p['nome'])),
+                _linhaDetalhe(Icons.attach_money, 'Valor mensal',
+                    'R\$ ${preco.toStringAsFixed(2).replaceAll('.', ',')}', corValor: _brandRed),
+                _linhaDetalhe(Icons.flag_outlined, 'Situação', textoStatus, corValor: cor),
+                _linhaDetalhe(Icons.edit_calendar_outlined, 'Assinada em', _txtOuTraco(p['assinada_em'])),
+                _linhaDetalhe(Icons.play_circle_outline, 'Início do período', _txtOuTraco(p['inicio'])),
+                _linhaDetalhe(Icons.event_repeat, 'Validade / renovação', _txtOuTraco(p['validade'])),
+                _linhaDetalhe(Icons.hourglass_bottom, 'Prazo', _situacaoValidade(validade)),
+                _tituloSecaoDetalhe('USO E PAGAMENTO'),
+                _linhaDetalhe(Icons.content_cut, 'Cortes usando o plano (no período)', _txtOuTraco(p['usos_plano'] ?? 0)),
+                _linhaDetalhe(Icons.tag, 'Nº da assinatura', '#${_txtOuTraco(p['id'])}'),
+                _linhaDetalhe(Icons.receipt_long_outlined, 'ID no Mercado Pago', _txtOuTraco(p['gateway_subscription_id'])),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  height: 44,
+                  child: OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Colors.white24),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Fechar', style: TextStyle(color: Colors.white)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -6545,7 +6433,7 @@ class _AbaHorariosState extends State<_AbaHorarios> {
 }
 
 // ==============================================================================
-// PAINEL DE COMISSÕES (intervalo de datas + colaborador)
+// PAINEL DE COMISSÕES (período + colaborador + baixa de pagamento)
 // ==============================================================================
 class ComissoesScreen extends StatefulWidget {
   const ComissoesScreen({super.key});
@@ -6564,7 +6452,10 @@ class _ComissoesScreenState extends State<ComissoesScreen> {
   late DateTime _fim;
   List<dynamic> _barbeiros = [];
   String? _barbeiroId; // null = todos os colaboradores
+  String _situacao = 'todas'; // 'todas' | 'pendentes' | 'pagas'
+  final Set<int> _selecionados = {};
   bool _carregando = true;
+  bool _processando = false;
   String? _erro;
   Map<String, dynamic>? _dados;
 
@@ -6591,6 +6482,8 @@ class _ComissoesScreenState extends State<ComissoesScreen> {
 
   double _num(dynamic v) => double.tryParse('${v ?? 0}') ?? 0;
 
+  int _idDe(dynamic a) => int.tryParse('${a['id']}') ?? 0;
+
   String _moeda(double v) => 'R\$ ${v.toStringAsFixed(2).replaceAll('.', ',')}';
 
   String _pct(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
@@ -6600,6 +6493,13 @@ class _ComissoesScreenState extends State<ComissoesScreen> {
       if (b['id'].toString() == id.toString()) return b['foto_url'];
     }
     return null;
+  }
+
+  void _snack(String msg, {bool erro = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), backgroundColor: erro ? Colors.red : Colors.teal),
+    );
   }
 
   Future<void> _carregarBarbeiros() async {
@@ -6624,6 +6524,7 @@ class _ComissoesScreenState extends State<ComissoesScreen> {
     setState(() {
       _carregando = true;
       _erro = null;
+      _selecionados.clear();
     });
     try {
       final q = StringBuffer('inicio=${_fmtApi(_inicio)}&fim=${_fmtApi(_fim)}');
@@ -6685,6 +6586,86 @@ class _ComissoesScreenState extends State<ComissoesScreen> {
     if (r != null) _definirPeriodo(r.start, r.end);
   }
 
+  Future<bool> _confirmar(String titulo, String texto, String botao) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _cardColor,
+        title: Text(titulo, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+        content: Text(texto, style: const TextStyle(color: Colors.white70, fontSize: 14)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: _brandRed),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(botao, style: const TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    return ok == true;
+  }
+
+  Future<void> _enviarAcao(String rota, List<int> ids, String msgErro) async {
+    setState(() => _processando = true);
+    try {
+      final resp = await http.post(
+        Uri.parse('${AppConfig.apiUrl}/admin/comissoes/$rota'),
+        headers: AppConfig.adminHeaders,
+        body: jsonEncode({'agendamento_ids': ids}),
+      );
+      if (!mounted) return;
+      String msg = msgErro;
+      try {
+        msg = (jsonDecode(resp.body)['mensagem'] ?? msgErro).toString();
+      } catch (_) {}
+      if (resp.statusCode == 200) {
+        _snack('✅ $msg');
+        await _carregar();
+      } else {
+        _snack('❌ $msg', erro: true);
+      }
+    } catch (e) {
+      debugPrint('Erro em comissões/$rota: $e');
+      _snack('Erro de conexão com o servidor.', erro: true);
+    } finally {
+      if (mounted) setState(() => _processando = false);
+    }
+  }
+
+  Future<void> _darBaixa(String nome, List<dynamic> alvo) async {
+    if (alvo.isEmpty || _processando) return;
+    final total = alvo.fold<double>(0, (s, a) => s + _num(a['comissao']));
+    final ok = await _confirmar(
+      'Dar baixa nas comissões?',
+      'Confirmar o pagamento de ${_moeda(total)} para $nome (${alvo.length} atendimento(s))? '
+          'Elas passam para "pagas".',
+      'Dar baixa',
+    );
+    if (!ok) return;
+    await _enviarAcao('baixa', alvo.map<int>((a) => _idDe(a)).toList(), 'Falha ao dar baixa.');
+  }
+
+  Future<void> _desfazerBaixa(dynamic atendimento) async {
+    if (_processando) return;
+    final ok = await _confirmar(
+      'Desfazer baixa?',
+      'Esta comissão (${_moeda(_num(atendimento['comissao']))}) volta para pendente.',
+      'Desfazer',
+    );
+    if (!ok) return;
+    await _enviarAcao('estornar', [_idDe(atendimento)], 'Falha ao desfazer a baixa.');
+  }
+
+  List<dynamic> _filtrarAtendimentos(List<dynamic> lista) {
+    if (_situacao == 'pendentes') return lista.where((a) => a['pago'] != true).toList();
+    if (_situacao == 'pagas') return lista.where((a) => a['pago'] == true).toList();
+    return lista;
+  }
+
   Widget _chipAtalho(String label, VoidCallback onTap) {
     return Padding(
       padding: const EdgeInsets.only(right: 8),
@@ -6693,6 +6674,24 @@ class _ComissoesScreenState extends State<ComissoesScreen> {
         backgroundColor: _cardColor,
         side: const BorderSide(color: Colors.white10),
         onPressed: onTap,
+      ),
+    );
+  }
+
+  Widget _chipSituacao(String valor, String label) {
+    final ativo = _situacao == valor;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ChoiceChip(
+        label: Text(label, style: TextStyle(color: ativo ? Colors.white : Colors.white70, fontSize: 12)),
+        selected: ativo,
+        selectedColor: _brandRed,
+        backgroundColor: _cardColor,
+        showCheckmark: false,
+        onSelected: (_) => setState(() {
+          _situacao = valor;
+          _selecionados.clear();
+        }),
       ),
     );
   }
@@ -6806,6 +6805,14 @@ class _ComissoesScreenState extends State<ComissoesScreen> {
             _carregar();
           },
         ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            _chipSituacao('todas', 'Todas'),
+            _chipSituacao('pendentes', 'Pendentes'),
+            _chipSituacao('pagas', 'Pagas'),
+          ],
+        ),
       ],
     );
   }
@@ -6813,6 +6820,8 @@ class _ComissoesScreenState extends State<ComissoesScreen> {
   Widget _buildResumo() {
     final totalFat = _num(_dados?['total_faturamento']);
     final totalCom = _num(_dados?['total_comissao']);
+    final paga = _num(_dados?['total_paga']);
+    final pendente = _num(_dados?['total_pendente']);
     final cortes = (_dados?['total_cortes'] ?? 0).toString();
     return Container(
       padding: const EdgeInsets.all(16),
@@ -6825,9 +6834,85 @@ class _ComissoesScreenState extends State<ComissoesScreen> {
         children: [
           _linhaResumo('Cortes finalizados', cortes, Colors.white),
           _linhaResumo('Faturamento', _moeda(totalFat), Colors.white),
-          _linhaResumo('Comissões a pagar', _moeda(totalCom), Colors.orangeAccent),
+          _linhaResumo('Comissões do período', _moeda(totalCom), Colors.white),
+          _linhaResumo('Comissões pagas', _moeda(paga), Colors.greenAccent),
+          _linhaResumo('Comissões pendentes', _moeda(pendente), Colors.orangeAccent, destaque: true),
           const Divider(color: Colors.white10, height: 16),
-          _linhaResumo('Fica na barbearia', _moeda(totalFat - totalCom), Colors.greenAccent, destaque: true),
+          _linhaResumo('Fica na barbearia', _moeda(totalFat - totalCom), Colors.greenAccent),
+        ],
+      ),
+    );
+  }
+
+  Widget _linhaAtendimento(dynamic a) {
+    final pago = a['pago'] == true;
+    final id = _idDe(a);
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          if (pago)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: Icon(Icons.check_circle, color: Colors.greenAccent, size: 20),
+            )
+          else
+            SizedBox(
+              width: 40,
+              child: Checkbox(
+                value: _selecionados.contains(id),
+                activeColor: _brandRed,
+                visualDensity: VisualDensity.compact,
+                onChanged: _processando
+                    ? null
+                    : (v) => setState(() {
+                          if (v == true) {
+                            _selecionados.add(id);
+                          } else {
+                            _selecionados.remove(id);
+                          }
+                        }),
+              ),
+            ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${_fmtBrIso((a['data'] ?? '').toString())} ${a['horario'] ?? ''} • ${a['cliente_nome'] ?? ''}',
+                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  '${a['servico'] ?? ''} • ${_moeda(_num(a['valor']))} • ${_pct(_num(a['percentual']))}%',
+                  style: TextStyle(color: _textSecondary, fontSize: 11),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (pago)
+                  Text('PAGO em ${a['pago_em'] ?? ''}',
+                      style: const TextStyle(color: Colors.greenAccent, fontSize: 10, fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            _moeda(_num(a['comissao'])),
+            style: TextStyle(
+              color: pago ? Colors.greenAccent : Colors.orangeAccent,
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+            ),
+          ),
+          if (pago)
+            IconButton(
+              tooltip: 'Desfazer baixa',
+              visualDensity: VisualDensity.compact,
+              icon: Icon(Icons.undo, color: _textSecondary, size: 18),
+              onPressed: _processando ? null : () => _desfazerBaixa(a),
+            )
+          else
+            const SizedBox(width: 8),
         ],
       ),
     );
@@ -6835,7 +6920,14 @@ class _ComissoesScreenState extends State<ComissoesScreen> {
 
   Widget _buildCardBarbeiro(Map<String, dynamic> g) {
     final servicos = (g['servicos'] ?? []) as List<dynamic>;
-    final atendimentos = (g['atendimentos'] ?? []) as List<dynamic>;
+    final todos = (g['atendimentos'] ?? []) as List<dynamic>;
+    final visiveis = _filtrarAtendimentos(todos);
+    final pendentesVisiveis = visiveis.where((a) => a['pago'] != true).toList();
+    final selecionadosDele = todos.where((a) => a['pago'] != true && _selecionados.contains(_idDe(a))).toList();
+    final totalSelecionado = selecionadosDele.fold<double>(0, (s, a) => s + _num(a['comissao']));
+    final pendente = _num(g['comissao_pendente']);
+    final paga = _num(g['comissao_paga']);
+
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
@@ -6846,8 +6938,9 @@ class _ComissoesScreenState extends State<ComissoesScreen> {
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
+          key: PageStorageKey('comissao-${g['barbeiro_id']}'),
           tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          childrenPadding: const EdgeInsets.fromLTRB(4, 0, 12, 12),
           iconColor: _textSecondary,
           collapsedIconColor: _textSecondary,
           leading: _buildAvatarBarbeiro(_fotoDoBarbeiro(g['barbeiro_id']), radius: 18),
@@ -6857,34 +6950,119 @@ class _ComissoesScreenState extends State<ComissoesScreen> {
             overflow: TextOverflow.ellipsis,
           ),
           subtitle: Text(
-            '${g['qtd']} corte(s) • Faturou ${_moeda(_num(g['faturamento']))}',
+            '${g['qtd']} corte(s) • Faturou ${_moeda(_num(g['faturamento']))}\nJá pago ${_moeda(paga)}',
             style: TextStyle(color: _textSecondary, fontSize: 11),
           ),
           trailing: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text('A RECEBER', style: TextStyle(color: _textSecondary, fontSize: 9, fontWeight: FontWeight.bold)),
+              Text(pendente > 0 ? 'PENDENTE' : 'EM DIA',
+                  style: TextStyle(color: _textSecondary, fontSize: 9, fontWeight: FontWeight.bold)),
               Text(
-                _moeda(_num(g['comissao'])),
-                style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 14),
+                _moeda(pendente),
+                style: TextStyle(
+                  color: pendente > 0 ? Colors.orangeAccent : Colors.greenAccent,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
               ),
             ],
           ),
           children: [
-            if (atendimentos.isEmpty)
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text('Nenhum corte finalizado no período.', style: TextStyle(color: _textSecondary, fontSize: 12)),
+            if (todos.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('Nenhum corte finalizado no período.', style: TextStyle(color: _textSecondary, fontSize: 12)),
+                ),
               )
             else ...[
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text('POR SERVIÇO', style: TextStyle(color: _textSecondary, fontSize: 10, fontWeight: FontWeight.bold)),
+              Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text('ATENDIMENTOS', style: TextStyle(color: _textSecondary, fontSize: 10, fontWeight: FontWeight.bold)),
+                    ),
+                    if (pendentesVisiveis.isNotEmpty)
+                      TextButton(
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          minimumSize: const Size(0, 28),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        onPressed: _processando
+                            ? null
+                            : () => setState(() {
+                                  final ids = pendentesVisiveis.map<int>((a) => _idDe(a)).toList();
+                                  final todosMarcados = ids.every(_selecionados.contains);
+                                  if (todosMarcados) {
+                                    _selecionados.removeAll(ids);
+                                  } else {
+                                    _selecionados.addAll(ids);
+                                  }
+                                }),
+                        child: Text(
+                          pendentesVisiveis.every((a) => _selecionados.contains(_idDe(a))) ? 'Limpar seleção' : 'Selecionar pendentes',
+                          style: TextStyle(color: _brandRed, fontSize: 12, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              if (visiveis.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(left: 8, top: 6),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('Nenhum atendimento nesta situação.', style: TextStyle(color: _textSecondary, fontSize: 12)),
+                  ),
+                )
+              else
+                ...visiveis.map(_linhaAtendimento),
+              if (pendentesVisiveis.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: 44,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.teal,
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor: Colors.white10,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onPressed: (_processando || selecionadosDele.isEmpty)
+                          ? null
+                          : () => _darBaixa((g['nome'] ?? '').toString(), selecionadosDele),
+                      icon: _processando
+                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : const Icon(Icons.price_check, size: 18),
+                      label: Text(
+                        selecionadosDele.isEmpty
+                            ? 'Marque as comissões para dar baixa'
+                            : 'DAR BAIXA (${selecionadosDele.length}) • ${_moeda(totalSelecionado)}',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 14),
+              Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('POR SERVIÇO', style: TextStyle(color: _textSecondary, fontSize: 10, fontWeight: FontWeight.bold)),
+                ),
               ),
               ...servicos.map((sv) {
                 return Padding(
-                  padding: const EdgeInsets.only(top: 8),
+                  padding: const EdgeInsets.only(top: 8, left: 8),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -6903,41 +7081,6 @@ class _ComissoesScreenState extends State<ComissoesScreen> {
                       ),
                       const SizedBox(width: 8),
                       Text(_moeda(_num(sv['comissao'])),
-                          style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 12)),
-                    ],
-                  ),
-                );
-              }),
-              const SizedBox(height: 14),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text('ATENDIMENTOS', style: TextStyle(color: _textSecondary, fontSize: 10, fontWeight: FontWeight.bold)),
-              ),
-              ...atendimentos.map((a) {
-                return Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '${_fmtBrIso((a['data'] ?? '').toString())} ${a['horario'] ?? ''} • ${a['cliente_nome'] ?? ''}',
-                              style: const TextStyle(color: Colors.white, fontSize: 12),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            Text(
-                              '${a['servico'] ?? ''} • ${_moeda(_num(a['valor']))}',
-                              style: TextStyle(color: _textSecondary, fontSize: 11),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(_moeda(_num(a['comissao'])),
                           style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 12)),
                     ],
                   ),
@@ -7007,7 +7150,8 @@ class _ComissoesScreenState extends State<ComissoesScreen> {
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
-                  'Conta pelo dia do agendamento. Percentual definido na aba Comissões de cada barbeiro (padrão 40%).',
+                  'Conta pelo dia do agendamento. Percentual definido na aba Comissões de cada barbeiro (padrão 40%). '
+                  'Comissões pagas guardam o valor da hora da baixa.',
                   style: TextStyle(color: _textSecondary, fontSize: 10),
                 ),
               ),

@@ -418,7 +418,31 @@ def garantir_tabela_pagamentos():
         print("Aviso: não foi possível garantir a tabela pagamentos_processados:", e)
 
 
+def garantir_tabela_comissoes_pagas():
+    """Controle de baixa das comissões: um registro por atendimento com a comissão já paga."""
+    try:
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS comissoes_pagas (
+                        agendamento_id INT PRIMARY KEY,
+                        barbeiro_id INT NOT NULL,
+                        valor DECIMAL(10, 2) NOT NULL DEFAULT 0,
+                        percentual DECIMAL(5, 2) NOT NULL DEFAULT 0,
+                        pago_em DATETIME NOT NULL,
+                        INDEX idx_comissoes_barbeiro (barbeiro_id)
+                    ) ENGINE=InnoDB
+                """)
+                conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:
+        print("Aviso: não foi possível garantir a tabela comissoes_pagas:", e)
+
+
 garantir_coluna_concluido_em()
+garantir_tabela_comissoes_pagas()
 garantir_coluna_ativo_barbeiros()
 garantir_tabela_cadastros_pendentes()
 garantir_colunas_senha_cifrada()
@@ -2026,24 +2050,27 @@ def _enviar_email_codigo(email, nome, codigo, finalidade="cadastro"):
         f"{ignorar}"
     )
 
-    try:
-        resp = requests.post(
-            "https://api.brevo.com/v3/smtp/email",
-            headers={"api-key": api_key, "accept": "application/json", "content-type": "application/json"},
-            json={
-                "sender": {"name": nome_remetente, "email": remetente},
-                "to": [{"email": email, "name": nome or email}],
-                "subject": assunto,
-                "htmlContent": html_corpo,
-                "textContent": texto,
-            },
-            timeout=10,
-        )
-        if resp.status_code in (200, 201, 202):
-            return True
-        app.logger.error("Brevo recusou o envio (%s): %s", resp.status_code, resp.text[:300])
-    except requests.RequestException as e:
-        app.logger.error("Falha ao chamar a API de e-mail: %s", e)
+    for tentativa in (1, 2):
+        try:
+            resp = requests.post(
+                "https://api.brevo.com/v3/smtp/email",
+                headers={"api-key": api_key, "accept": "application/json", "content-type": "application/json"},
+                json={
+                    "sender": {"name": nome_remetente, "email": remetente},
+                    "to": [{"email": email, "name": nome or email}],
+                    "subject": assunto,
+                    "htmlContent": html_corpo,
+                    "textContent": texto,
+                },
+                timeout=20,
+            )
+            if resp.status_code in (200, 201, 202):
+                return True
+            app.logger.error("Brevo recusou o envio (%s): %s", resp.status_code, resp.text[:300])
+            if resp.status_code < 500:  # erro de configuração/credencial: repetir não adianta
+                break
+        except requests.RequestException as e:
+            app.logger.error("Falha ao chamar a API de e-mail (tentativa %s): %s", tentativa, e)
     return False
 
 
@@ -2256,6 +2283,48 @@ def api_admin_usuarios():
     finally:
         conn.close()
         
+@app.route("/api/admin/usuarios", methods=["POST"])
+@admin_required
+def api_admin_criar_usuario():
+    """O administrador cadastra um cliente direto, sem o código de confirmação por e-mail."""
+    dados = request.get_json(silent=True) or {}
+    nome = str(dados.get("nome") or "").strip()
+    email = str(dados.get("email") or "").strip().lower()
+    senha = str(dados.get("senha") or "")
+    telefone = str(dados.get("telefone") or "").strip()
+
+    erro = validar_cadastro(nome, email, senha, telefone)
+    if erro:
+        return jsonify({"sucesso": False, "mensagem": erro}), 400
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id FROM usuarios WHERE email = %s", (email,))
+            if cursor.fetchone():
+                return jsonify({"sucesso": False, "mensagem": "E-mail já cadastrado!"}), 400
+            try:
+                cursor.execute(
+                    "INSERT INTO usuarios (nome, email, senha, telefone) VALUES (%s, %s, %s, %s)",
+                    (nome, email, generate_password_hash(senha), telefone),
+                )
+            except pymysql.err.IntegrityError:
+                conn.rollback()
+                return jsonify({"sucesso": False, "mensagem": "E-mail já cadastrado!"}), 400
+            novo_id = cursor.lastrowid
+            if _SENHA_COL_OK:
+                cursor.execute("UPDATE usuarios SET senha_cifrada = %s WHERE id = %s", (_cifrar_senha(senha), novo_id))
+            cursor.execute("DELETE FROM cadastros_pendentes WHERE email = %s", (email,))
+            conn.commit()
+        return jsonify({"sucesso": True, "mensagem": "Usuário cadastrado com sucesso!", "id": novo_id}), 201
+    except Exception as e:
+        conn.rollback()
+        app.logger.error("Erro em api_admin_criar_usuario: %s", e)
+        return jsonify({"sucesso": False, "mensagem": "Erro interno. Tente novamente."}), 500
+    finally:
+        conn.close()
+
+
 @app.route("/api/admin/usuarios/<int:usuario_id>", methods=["DELETE", "OPTIONS"])
 @admin_required
 def api_admin_deletar_usuario(usuario_id):
@@ -2671,8 +2740,64 @@ def atualizar_status_agendamento(id):
 
 
 # ==============================================================================
-# PAINEL DE COMISSÕES (intervalo de datas + colaborador)
+# PAINEL DE COMISSÕES (intervalo de datas + colaborador + baixa de pagamento)
 # ==============================================================================
+def _contexto_comissoes(cursor):
+    """Barbeiros ativos, preços dos serviços e percentuais configurados."""
+    cursor.execute("SELECT id, nome FROM barbeiros WHERE ativo = 1")
+    barbeiros = {b["id"]: str(b["nome"]).strip() for b in cursor.fetchall()}
+
+    cursor.execute("SELECT nome, preco FROM servicos")
+    precos = {str(s["nome"]).strip().lower(): float(s["preco"]) for s in cursor.fetchall()}
+
+    cursor.execute("""
+        SELECT bs.barbeiro_id, LOWER(TRIM(s.nome)) AS servico, bs.comissao_percentual
+        FROM barbeiro_servicos bs
+        JOIN servicos s ON s.id = bs.servico_id
+    """)
+    cfg = {
+        (r["barbeiro_id"], r["servico"]): float(r["comissao_percentual"] if r["comissao_percentual"] is not None else 40.0)
+        for r in cursor.fetchall()
+    }
+    return barbeiros, precos, cfg
+
+
+def _calcular_comissao_linha(linha, barbeiros, precos, cfg):
+    """Devolve (barbeiro_id, valor, percentual, comissao) ou None se o barbeiro não está ativo."""
+    bid = linha.get("barbeiro_id")
+    if bid not in barbeiros:
+        bid = None
+        prof = str(linha.get("profissional") or "").strip().lower()
+        if prof:
+            for i, n in barbeiros.items():
+                if n.lower() == prof:
+                    bid = i
+                    break
+            if bid is None:
+                for i, n in barbeiros.items():
+                    nl = n.lower()
+                    if nl and (nl in prof or prof in nl):
+                        bid = i
+                        break
+    if bid is None:
+        return None
+
+    serv_chave = str(linha.get("servico") or "").strip().lower()
+    valor = float(linha.get("preco") or 0)
+    if valor <= 0:
+        valor = precos.get(serv_chave, 0.0)
+    pct = cfg.get((bid, serv_chave), 40.0)
+    return bid, valor, pct, round(valor * pct / 100.0, 2)
+
+
+def _fmt_data_br(valor, com_hora=False):
+    if not valor:
+        return ""
+    if hasattr(valor, "strftime"):
+        return valor.strftime("%d/%m/%Y %H:%M" if com_hora else "%d/%m/%Y")
+    return str(valor)[:16 if com_hora else 10]
+
+
 @app.route("/api/admin/comissoes", methods=["GET", "OPTIONS"])
 @admin_required
 def api_admin_comissoes():
@@ -2703,22 +2828,7 @@ def api_admin_comissoes():
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT id, nome FROM barbeiros WHERE ativo = 1")
-            barbeiros = {b["id"]: str(b["nome"]).strip() for b in cursor.fetchall()}
-            nomes_idx = {i: n.lower() for i, n in barbeiros.items()}
-
-            cursor.execute("SELECT nome, preco FROM servicos")
-            precos_por_servico = {str(s["nome"]).strip().lower(): float(s["preco"]) for s in cursor.fetchall()}
-
-            cursor.execute("""
-                SELECT bs.barbeiro_id, LOWER(TRIM(s.nome)) AS servico, bs.comissao_percentual
-                FROM barbeiro_servicos bs
-                JOIN servicos s ON s.id = bs.servico_id
-            """)
-            comissoes_cfg = {
-                (r["barbeiro_id"], r["servico"]): float(r["comissao_percentual"] if r["comissao_percentual"] is not None else 40.0)
-                for r in cursor.fetchall()
-            }
+            barbeiros, precos, cfg = _contexto_comissoes(cursor)
 
             cursor.execute("""
                 SELECT a.id, a.barbeiro_id, a.profissional, a.data, a.horario, a.servico, a.preco,
@@ -2731,46 +2841,41 @@ def api_admin_comissoes():
             """, (inicio, fim))
             linhas = cursor.fetchall()
 
-        def _achar_barbeiro(linha):
-            bid = linha.get("barbeiro_id")
-            if bid in barbeiros:
-                return bid
-            prof = str(linha.get("profissional") or "").strip().lower()
-            if not prof:
-                return None
-            for i, n in nomes_idx.items():
-                if n == prof:
-                    return i
-            for i, n in nomes_idx.items():
-                if n and (n in prof or prof in n):
-                    return i
-            return None
+            cursor.execute("""
+                SELECT cp.agendamento_id, cp.valor, cp.percentual, cp.pago_em
+                FROM comissoes_pagas cp
+                JOIN agendamentos a ON a.id = cp.agendamento_id
+                WHERE DATE(a.data) BETWEEN %s AND %s
+            """, (inicio, fim))
+            pagas = {r["agendamento_id"]: r for r in cursor.fetchall()}
 
         grupos = {}
         for l in linhas:
-            bid = _achar_barbeiro(l)
-            if bid is None:  # barbeiro excluído/inativo não aparece
+            calc = _calcular_comissao_linha(l, barbeiros, precos, cfg)
+            if calc is None:  # barbeiro excluído/inativo não aparece
                 continue
+            bid, valor, pct, comissao = calc
             if filtro_barbeiro is not None and bid != filtro_barbeiro:
                 continue
 
-            serv_chave = str(l.get("servico") or "").strip().lower()
-            valor = float(l.get("preco") or 0)
-            if valor <= 0:
-                valor = precos_por_servico.get(serv_chave, 0.0)
-            pct = comissoes_cfg.get((bid, serv_chave), 40.0)
-            comissao = round(valor * pct / 100.0, 2)
-
-            data_val = l["data"].strftime("%Y-%m-%d") if hasattr(l["data"], "strftime") else str(l["data"])[:10]
+            baixa = pagas.get(l["id"])
+            if baixa:  # comissão já paga: mantém o valor e o percentual da hora do pagamento
+                comissao = float(baixa["valor"])
+                pct = float(baixa["percentual"])
 
             g = grupos.setdefault(bid, {
                 "barbeiro_id": bid, "nome": barbeiros[bid],
                 "qtd": 0, "faturamento": 0.0, "comissao": 0.0,
+                "comissao_paga": 0.0, "comissao_pendente": 0.0,
                 "servicos": {}, "atendimentos": [],
             })
             g["qtd"] += 1
             g["faturamento"] += valor
             g["comissao"] += comissao
+            if baixa:
+                g["comissao_paga"] += comissao
+            else:
+                g["comissao_pendente"] += comissao
 
             nome_serv = str(l.get("servico") or "Serviço").strip()
             sv = g["servicos"].setdefault(nome_serv, {
@@ -2781,27 +2886,32 @@ def api_admin_comissoes():
             sv["comissao"] += comissao
 
             g["atendimentos"].append({
-                "id": l["id"], "data": data_val, "horario": str(l.get("horario") or ""),
+                "id": l["id"], "data": l["data"].strftime("%Y-%m-%d") if hasattr(l["data"], "strftime") else str(l["data"])[:10],
+                "horario": str(l.get("horario") or ""),
                 "servico": nome_serv, "cliente_nome": l.get("cliente_nome") or "Cliente",
                 "valor": round(valor, 2), "percentual": pct, "comissao": comissao,
+                "pago": bool(baixa),
+                "pago_em": _fmt_data_br(baixa["pago_em"], True) if baixa else "",
             })
 
         if filtro_barbeiro is not None and filtro_barbeiro in barbeiros and filtro_barbeiro not in grupos:
             grupos[filtro_barbeiro] = {
                 "barbeiro_id": filtro_barbeiro, "nome": barbeiros[filtro_barbeiro],
-                "qtd": 0, "faturamento": 0.0, "comissao": 0.0, "servicos": {}, "atendimentos": [],
+                "qtd": 0, "faturamento": 0.0, "comissao": 0.0,
+                "comissao_paga": 0.0, "comissao_pendente": 0.0,
+                "servicos": {}, "atendimentos": [],
             }
 
         resultado = []
         for g in grupos.values():
-            g["faturamento"] = round(g["faturamento"], 2)
-            g["comissao"] = round(g["comissao"], 2)
+            for campo in ("faturamento", "comissao", "comissao_paga", "comissao_pendente"):
+                g[campo] = round(g[campo], 2)
             g["servicos"] = [
                 {**s, "faturamento": round(s["faturamento"], 2), "comissao": round(s["comissao"], 2)}
                 for s in g["servicos"].values()
             ]
             resultado.append(g)
-        resultado.sort(key=lambda x: x["comissao"], reverse=True)
+        resultado.sort(key=lambda x: x["comissao_pendente"], reverse=True)
 
         return jsonify({
             "sucesso": True,
@@ -2810,10 +2920,105 @@ def api_admin_comissoes():
             "total_cortes": sum(g["qtd"] for g in resultado),
             "total_faturamento": round(sum(g["faturamento"] for g in resultado), 2),
             "total_comissao": round(sum(g["comissao"] for g in resultado), 2),
+            "total_paga": round(sum(g["comissao_paga"] for g in resultado), 2),
+            "total_pendente": round(sum(g["comissao_pendente"] for g in resultado), 2),
             "barbeiros": resultado,
         }), 200
     except Exception as e:
         app.logger.error("Erro em api_admin_comissoes: %s", e)
+        return jsonify({"sucesso": False, "mensagem": "Erro interno. Tente novamente."}), 500
+    finally:
+        conn.close()
+
+
+def _ids_agendamentos(dados):
+    """Lê e valida a lista agendamento_ids do corpo da requisição (até 500 ids)."""
+    bruto = dados.get("agendamento_ids")
+    if not isinstance(bruto, list) or not bruto or len(bruto) > 500:
+        return None
+    ids = []
+    for item in bruto:
+        n = parse_int(item, 1)
+        if n is None:
+            return None
+        ids.append(n)
+    return sorted(set(ids))
+
+
+@app.route("/api/admin/comissoes/baixa", methods=["POST", "OPTIONS"])
+@admin_required
+def api_admin_comissoes_baixa():
+    """Dá baixa (marca como paga) nas comissões dos atendimentos escolhidos."""
+    dados = request.get_json(silent=True) or {}
+    ids = _ids_agendamentos(dados)
+    if ids is None:
+        return jsonify({"sucesso": False, "mensagem": "Escolha ao menos uma comissão."}), 400
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            barbeiros, precos, cfg = _contexto_comissoes(cursor)
+            marcadores = ",".join(["%s"] * len(ids))
+            cursor.execute(f"""
+                SELECT a.id, a.barbeiro_id, a.profissional, a.servico, a.preco
+                FROM agendamentos a
+                WHERE a.id IN ({marcadores}) AND LOWER(a.status) IN ('concluido', 'finalizado')
+            """, ids)
+            linhas = cursor.fetchall()
+
+            agora = datetime.now()
+            baixados, total = 0, 0.0
+            for l in linhas:
+                calc = _calcular_comissao_linha(l, barbeiros, precos, cfg)
+                if calc is None:
+                    continue
+                bid, _valor, pct, comissao = calc
+                cursor.execute(
+                    "INSERT IGNORE INTO comissoes_pagas (agendamento_id, barbeiro_id, valor, percentual, pago_em) "
+                    "VALUES (%s, %s, %s, %s, %s)",
+                    (l["id"], bid, comissao, pct, agora),
+                )
+                if cursor.rowcount > 0:
+                    baixados += 1
+                    total += comissao
+            conn.commit()
+
+        if baixados == 0:
+            return jsonify({"sucesso": False, "mensagem": "Nenhuma comissão pendente encontrada para dar baixa."}), 400
+        return jsonify({
+            "sucesso": True,
+            "mensagem": f"Baixa feita em {baixados} comissão(ões).",
+            "baixados": baixados,
+            "total": round(total, 2),
+        }), 200
+    except Exception as e:
+        conn.rollback()
+        app.logger.error("Erro em api_admin_comissoes_baixa: %s", e)
+        return jsonify({"sucesso": False, "mensagem": "Erro interno. Tente novamente."}), 500
+    finally:
+        conn.close()
+
+
+@app.route("/api/admin/comissoes/estornar", methods=["POST", "OPTIONS"])
+@admin_required
+def api_admin_comissoes_estornar():
+    """Desfaz a baixa: as comissões voltam para pendentes."""
+    dados = request.get_json(silent=True) or {}
+    ids = _ids_agendamentos(dados)
+    if ids is None:
+        return jsonify({"sucesso": False, "mensagem": "Escolha ao menos uma comissão."}), 400
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            marcadores = ",".join(["%s"] * len(ids))
+            cursor.execute(f"DELETE FROM comissoes_pagas WHERE agendamento_id IN ({marcadores})", ids)
+            desfeitos = cursor.rowcount
+            conn.commit()
+        return jsonify({"sucesso": True, "mensagem": f"{desfeitos} baixa(s) desfeita(s).", "desfeitos": desfeitos}), 200
+    except Exception as e:
+        conn.rollback()
+        app.logger.error("Erro em api_admin_comissoes_estornar: %s", e)
         return jsonify({"sucesso": False, "mensagem": "Erro interno. Tente novamente."}), 500
     finally:
         conn.close()
@@ -2983,7 +3188,14 @@ def admin_planos_ativos():
                     a.data_inicio AS inicio,
                     a.data_renovacao AS validade,
                     a.status,
-                    a.gateway_subscription_id
+                    a.gateway_subscription_id,
+                    a.cliente_id,
+                    a.criado_em AS assinada_em,
+                    (SELECT COUNT(*) FROM agendamentos ag
+                      WHERE ag.cliente_id = a.cliente_id
+                        AND LOWER(ag.tipo_pagamento) IN ('plano', 'vip')
+                        AND LOWER(ag.status) != 'cancelado'
+                        AND ag.data BETWEEN a.data_inicio AND a.data_renovacao) AS usos_plano
                 FROM assinaturas AS a
                 LEFT JOIN usuarios AS u ON a.cliente_id = u.id
                 ORDER BY a.id DESC
@@ -3002,6 +3214,12 @@ def admin_planos_ativos():
                             p[campo] = str(val)[:10]
                     else:
                         p[campo] = "--/--/----"
+
+                if p.get("assinada_em"):
+                    p["assinada_em"] = _fmt_data_br(p["assinada_em"], True)
+                else:
+                    p["assinada_em"] = "--/--/----"
+                p["usos_plano"] = int(p.get("usos_plano") or 0)
 
                 # Conversão segura do preço
                 try:

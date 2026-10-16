@@ -290,6 +290,18 @@ def init_db():
                 ) ENGINE=InnoDB;
             """)
 
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS comissoes_pagas (
+                    agendamento_id INT PRIMARY KEY,
+                    barbeiro_id INT NOT NULL,
+                    valor DECIMAL(10, 2) NOT NULL DEFAULT 0,
+                    percentual DECIMAL(5, 2) NOT NULL DEFAULT 0,
+                    pago_em DATETIME NOT NULL,
+                    INDEX idx_comissoes_barbeiro (barbeiro_id)
+                ) ENGINE=InnoDB;
+            """)
+
+        conn.commit()
         conn.close()
         print('✅ Banco de dados e tabelas criados/verificados com sucesso!')
 
