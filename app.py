@@ -3452,28 +3452,28 @@ def login():
 
 
 @app.route('/cadastro', methods=['GET', 'POST'])
+@rate_limit(10, 3600, "cadastro-web")
 def cadastro():
+    erro = None
     if request.method == 'POST':
-        nome = request.form.get('nome')
-        email = request.form.get('email')
-        telefone = request.form.get('telefone')
-        senha = request.form.get('senha')
+        nome = (request.form.get('nome') or '').strip()
+        email = (request.form.get('email') or '').strip()
+        telefone = (request.form.get('telefone') or '').strip()
+        senha = request.form.get('senha') or ''
 
-        # 1. Valide e salve o utilizador no banco de dados MySQL aqui...
-        # Exemplo: id_novo = db.salvar_usuario(nome, email, telefone, senha)
+        # 1. Valida os dados
+        erro = validar_cadastro(nome, email, senha, telefone)
+        if not erro:
+            # 2. Guarda o cadastro como pendente e envia o código de 6 dígitos por e-mail.
+            #    O usuário só é criado depois de confirmar o código em /verificar-email.
+            ok, msg, _status = _iniciar_verificacao_cadastro(nome, email, senha, telefone)
+            if ok:
+                session['cadastro_email'] = email.lower()
+                session['verif_aviso'] = msg
+                return redirect(url_for('verificar_email'))
+            erro = msg
 
-        # 2. Tente enviar o e-mail de boas-vindas de forma segura
-        try:
-            # Coloque aqui a sua função de envio de e-mail (ex: Brevo / SMTP)
-            enviar_email_boas_vindas(email, nome)
-        except Exception as e:
-            # Apenas regista o erro no console/log do Render, sem quebrar o cadastro do cliente!
-            print(f"AVISO: Falha ao enviar e-mail de boas-vindas: {e}")
-
-        # 3. Redireciona para o login com sucesso (ou renderiza mensagem positiva)
-        return redirect(url_for('login', cadastro_sucesso=1))
-
-    return render_template('cadastro.html')
+    return render_template('cadastro.html', erro=erro)
 
 @app.route("/verificar-email", methods=["GET", "POST"])
 @rate_limit(15, 600, "verificar-web")
