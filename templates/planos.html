@@ -152,7 +152,7 @@
                     </div>
                     <div class="plan-footer">
                         <span class="preco">R$ {{ "%.2f"|format(plano.preco)|replace('.', ',') }}/mês</span>
-                        <button class="btn-assinar" onclick="assinarPlano('{{ plano.nome }}', '{{ plano.preco }}')">
+                        <button class="btn-assinar" data-nome="{{ plano.nome }}" data-preco="{{ plano.preco }}" onclick="assinarPlano(this.dataset.nome, this.dataset.preco)">
                             Assinar agora
                         </button>
                     </div>

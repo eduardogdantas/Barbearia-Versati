@@ -809,6 +809,11 @@
 
     <!-- Scripts do Modal e APIs -->
     <script>
+        function escHtml(v) {
+            return String(v === null || v === undefined ? '' : v)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
         const clienteId = "{{ cliente_id or '' }}";
 
         function abrirModalAssinatura() {
@@ -871,10 +876,10 @@
                         const html = `
                             <div class="cartao-item">
                                 <div class="cartao-info">
-                                    ${cartao.thumb ? `<img src="${cartao.thumb}" alt="${cartao.bandeira}">` : '💳'}
+                                    ${cartao.thumb ? `<img src="${escHtml(cartao.thumb)}" alt="${escHtml(cartao.bandeira)}">` : '💳'}
                                     <div class="cartao-detalhes">
-                                        <strong>${cartao.bandeira.toUpperCase()} **** ${cartao.ultimos_digitos}</strong>
-                                        <span>Validade: ${cartao.exp_mes}/${cartao.exp_ano}</span>
+                                        <strong>${escHtml(String(cartao.bandeira).toUpperCase())} **** ${escHtml(cartao.ultimos_digitos)}</strong>
+                                        <span>Validade: ${escHtml(cartao.exp_mes)}/${escHtml(cartao.exp_ano)}</span>
                                     </div>
                                 </div>
                             </div>
@@ -913,8 +918,8 @@
                         const cardHtml = `
     <div class="produto-card">
         <div>
-            <h3>${prod.nome}</h3>
-            <p>${prod.descricao || 'Cuidados profissionais para cabelo e barba.'}</p>
+            <h3>${escHtml(prod.nome)}</h3>
+            <p>${escHtml(prod.descricao || 'Cuidados profissionais para cabelo e barba.')}</p>
         </div>
         <div class="produto-footer">
             <span class="produto-preco">${precoFormatado}</span>

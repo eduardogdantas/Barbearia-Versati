@@ -2478,10 +2478,22 @@ def api_admin_sessao():
     return jsonify({"sucesso": True}), 200
 
 
-@app.route("/api/admin/usuario/<int:usuario_id>/senha", methods=["GET", "OPTIONS"])
+@app.route("/api/admin/usuario/<int:usuario_id>/senha", methods=["POST", "OPTIONS"])
+@rate_limit(8, 300, "admin-ver-senha")
 @admin_required
 def api_admin_ver_senha(usuario_id):
-    """Mostra a senha ao administrador (cópia cifrada com SENHA_CIFRA_KEY; confere com o hash antes de exibir)."""
+    """Mostra a senha ao administrador (cópia cifrada com SENHA_CIFRA_KEY; confere com o hash antes de exibir).
+    Exige a senha do próprio administrador no corpo da requisição (senha_admin)."""
+    dados = request.get_json(silent=True) or {}
+    senha_admin = str(dados.get("senha_admin") or "")
+    try:
+        admin_ok = bool(ADMIN_PASSWORD_HASH) and check_password_hash(ADMIN_PASSWORD_HASH, senha_admin)
+    except ValueError:
+        admin_ok = False
+    if not admin_ok:
+        app.logger.warning("Ver senha: confirmação do admin incorreta (usuário %s, ip %s)", usuario_id, _ip_cliente())
+        return jsonify({'sucesso': False, 'mensagem': 'Senha do administrador incorreta.'}), 403
+
     if not _SENHA_COL_OK or _fernet() is None:
         return jsonify({'sucesso': False, 'mensagem': 'Ver senha não está ativado no servidor (falta SENHA_CIFRA_KEY).'}), 503
 
@@ -2510,7 +2522,7 @@ def api_admin_ver_senha(usuario_id):
             'mensagem': 'Senha ainda não disponível: ela aparece depois do próximo login deste usuário. Ou use ALTERAR para definir uma nova.',
         }), 404
 
-    app.logger.info("Admin visualizou a senha do usuário %s", usuario_id)
+    app.logger.info("Admin visualizou a senha do usuário %s (ip %s)", usuario_id, _ip_cliente())
     resp = jsonify({'sucesso': True, 'senha': senha})
     resp.headers["Cache-Control"] = "no-store"
     return resp

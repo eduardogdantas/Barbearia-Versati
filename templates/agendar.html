@@ -496,6 +496,11 @@
     </div>
 
     <script>
+        function escHtml(v) {
+            return String(v === null || v === undefined ? '' : v)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
         let etapaAtual = 1;
         let listaGlobalServicos = [];
         let categoriaAtiva = 'Todos';
@@ -639,7 +644,7 @@
                 
                 let conteudoVisual = '';
                 if (s.foto && s.foto.trim() !== '') {
-                    conteudoVisual = `<div class="card-img-wrapper"><img src="${s.foto}" class="card-img" alt="${s.nome}"></div>`;
+                    conteudoVisual = `<div class="card-img-wrapper"><img src="${escHtml(s.foto)}" class="card-img" alt="${escHtml(s.nome)}"></div>`;
                 } else {
                     const primeiraLetra = s.nome ? s.nome.charAt(0).toUpperCase() : 'S';
                     conteudoVisual = `<div class="card-img-wrapper"><div class="servico-placeholder">${primeiraLetra}</div></div>`;
@@ -649,7 +654,7 @@
                     <div class="servico-info-wrapper">
                         ${conteudoVisual}
                         <div class="servico-textos">
-                            <div class="card-titulo">${s.nome}</div>
+                            <div class="card-titulo">${escHtml(s.nome)}</div>
                             <div class="card-sub">${precoFmt}</div>
                         </div>
                     </div>

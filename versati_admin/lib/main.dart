@@ -2075,11 +2075,60 @@ class _GerenciarUsuariosScreenState extends State<GerenciarUsuariosScreen> {
     }
   }
 
+  // Pede a senha do administrador antes de mostrar a senha de um cliente
+  Future<String?> _pedirSenhaAdmin(String nomeUsuario) {
+    final TextEditingController ctrl = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _cardDark,
+        title: const Text('CONFIRMAR IDENTIDADE',
+            style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Digite a sua senha de administrador para ver a senha de $nomeUsuario.',
+                style: TextStyle(color: _textSecondary, fontSize: 13)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              obscureText: true,
+              autofocus: true,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: 'Senha do administrador',
+                hintStyle: TextStyle(color: _textSecondary),
+                filled: true,
+                fillColor: const Color(0xFF121212),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+              ),
+              onSubmitted: (v) => Navigator.pop(ctx, v),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar', style: TextStyle(color: Colors.white70)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text),
+            child: Text('Confirmar', style: TextStyle(color: _brandRed, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _mostrarSenhaModal(int usuarioId, String nomeUsuario) async {
+    final senhaAdmin = await _pedirSenhaAdmin(nomeUsuario);
+    if (senhaAdmin == null || senhaAdmin.isEmpty || !mounted) return;
     try {
-      final response = await http.get(
+      final response = await http.post(
         Uri.parse('${AppConfig.apiUrl}/admin/usuario/$usuarioId/senha'),
         headers: AppConfig.adminHeaders,
+        body: jsonEncode({'senha_admin': senhaAdmin}),
       );
       if (!mounted) return;
 
