@@ -290,6 +290,26 @@ def garantir_coluna_concluido_em():
         print("Aviso: não foi possível garantir a coluna concluido_em:", e)
 
 
+def garantir_agendamento_sem_cadastro():
+    """Permite agendar cliente sem cadastro: cliente_id aceita NULL e guarda o nome em cliente_nome."""
+    try:
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("SHOW COLUMNS FROM agendamentos LIKE 'cliente_nome'")
+                if not cursor.fetchone():
+                    cursor.execute("ALTER TABLE agendamentos ADD COLUMN cliente_nome VARCHAR(100) NULL")
+                cursor.execute("SHOW COLUMNS FROM agendamentos LIKE 'cliente_id'")
+                col = cursor.fetchone()
+                if col and str(col.get("Null", "")).upper() == "NO":
+                    cursor.execute("ALTER TABLE agendamentos MODIFY cliente_id INT NULL")
+                conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:
+        print("Aviso: não foi possível preparar agendamento sem cadastro:", e)
+
+
 def garantir_coluna_ativo_barbeiros():
     """Cria barbeiros.ativo (0 = removido da equipe, mas mantém o histórico financeiro)."""
     try:
@@ -442,6 +462,7 @@ def garantir_tabela_comissoes_pagas():
 
 
 garantir_coluna_concluido_em()
+garantir_agendamento_sem_cadastro()
 garantir_tabela_comissoes_pagas()
 garantir_coluna_ativo_barbeiros()
 garantir_tabela_cadastros_pendentes()
@@ -1278,7 +1299,7 @@ def api_admin_agenda_equipe():
                         a.data, a.horario, a.servico, 
                         IFNULL(a.tipo_pagamento, 'presencial') AS tipo_pagamento, 
                         IFNULL(a.status, 'Confirmado') AS status, 
-                        IFNULL(u.nome, 'Cliente') AS cliente_nome, 
+                        COALESCE(u.nome, NULLIF(a.cliente_nome, ''), 'Cliente sem cadastro') AS cliente_nome, 
                         IFNULL(NULLIF(a.cliente_telefone, ''), IFNULL(u.telefone, 'Não informado')) AS cliente_telefone
                 FROM agendamentos a
                 LEFT JOIN usuarios u ON a.cliente_id = u.id
@@ -1349,7 +1370,7 @@ def api_admin_historico():
             cursor.execute("""
                 SELECT a.id, a.profissional, a.data, a.horario, a.servico, 
                        a.tipo_pagamento, a.preco, a.status,
-                       IFNULL(u.nome, 'Cliente') AS cliente_nome, 
+                       COALESCE(u.nome, NULLIF(a.cliente_nome, ''), 'Cliente sem cadastro') AS cliente_nome, 
                        IFNULL(NULLIF(a.cliente_telefone, ''), IFNULL(u.telefone, 'Não informado')) AS cliente_telefone
                 FROM agendamentos a
                 LEFT JOIN usuarios u ON a.cliente_id = u.id
@@ -1379,9 +1400,9 @@ def api_agendamentos_por_barbeiro(barbeiro_id):
             cursor.execute(
                 """
                 SELECT a.id, a.data, a.horario, a.servico, a.status, a.tipo_pagamento,
-                       u.nome AS cliente_nome, u.telefone AS cliente_telefone
+                       COALESCE(u.nome, NULLIF(a.cliente_nome, ''), 'Cliente sem cadastro') AS cliente_nome, IFNULL(NULLIF(a.cliente_telefone, ''), IFNULL(u.telefone, 'Não informado')) AS cliente_telefone
                 FROM agendamentos a
-                JOIN usuarios u ON a.cliente_id = u.id
+                LEFT JOIN usuarios u ON a.cliente_id = u.id
                 WHERE a.barbeiro_id = %s 
                   AND (a.status IS NULL OR LOWER(a.status) != 'cancelado')
                 ORDER BY a.data ASC, a.horario ASC
@@ -2516,9 +2537,9 @@ def api_admin_dados():
             # 1. Agendamentos gerais do dia selecionado (utiliza JOIN para exigir usuário existente)
             cursor.execute("""
                 SELECT a.id, a.profissional, a.data, a.horario, a.servico, 
-                       a.tipo_pagamento, u.nome as cliente_nome, u.email as cliente_email
+                       a.tipo_pagamento, COALESCE(u.nome, NULLIF(a.cliente_nome, ''), 'Cliente sem cadastro') as cliente_nome, IFNULL(u.email, '') as cliente_email
                 FROM agendamentos a
-                JOIN usuarios u ON a.cliente_id = u.id
+                LEFT JOIN usuarios u ON a.cliente_id = u.id
                 WHERE DATE(a.data) = %s
                 ORDER BY a.horario ASC
             """, (data_filtro,))
@@ -2546,10 +2567,10 @@ def api_admin_dados():
             # 2. Cortes Finalizados do DIA selecionado (com JOIN para ocultar usuários excluídos)
             cursor.execute("""
                 SELECT a.id, a.profissional, a.data, a.horario, a.servico, a.preco, 
-                       u.nome AS cliente_nome, 
+                       COALESCE(u.nome, NULLIF(a.cliente_nome, ''), 'Cliente sem cadastro') AS cliente_nome, 
                        IFNULL(NULLIF(a.cliente_telefone, ''), IFNULL(u.telefone, 'Não informado')) AS cliente_telefone
                 FROM agendamentos a
-                JOIN usuarios u ON a.cliente_id = u.id
+                LEFT JOIN usuarios u ON a.cliente_id = u.id
                 WHERE DATE(a.data) = %s AND LOWER(a.status) IN ('concluido', 'finalizado')
                 ORDER BY a.id DESC
             """, (data_filtro,))
@@ -2607,10 +2628,10 @@ def api_admin_dados():
             # 2.1 Cortes Finalizados da SEMANA ATUAL (Com JOIN)
             cursor.execute("""
                 SELECT a.id, a.profissional, a.data, a.horario, a.servico, a.preco, 
-                       u.nome AS cliente_nome, 
+                       COALESCE(u.nome, NULLIF(a.cliente_nome, ''), 'Cliente sem cadastro') AS cliente_nome, 
                        IFNULL(NULLIF(a.cliente_telefone, ''), IFNULL(u.telefone, 'Não informado')) AS cliente_telefone
                 FROM agendamentos a
-                JOIN usuarios u ON a.cliente_id = u.id
+                LEFT JOIN usuarios u ON a.cliente_id = u.id
                 WHERE YEARWEEK(a.data, 1) = YEARWEEK(%s, 1) AND LOWER(a.status) IN ('concluido', 'finalizado')
                 ORDER BY a.data DESC, a.horario ASC
             """, (semana_ref,))
@@ -2631,10 +2652,10 @@ def api_admin_dados():
             # 2.2 Cortes Finalizados do MÊS ATUAL (Com JOIN)
             cursor.execute("""
                 SELECT a.id, a.profissional, a.data, a.horario, a.servico, a.preco, 
-                       u.nome AS cliente_nome, 
+                       COALESCE(u.nome, NULLIF(a.cliente_nome, ''), 'Cliente sem cadastro') AS cliente_nome, 
                        IFNULL(NULLIF(a.cliente_telefone, ''), IFNULL(u.telefone, 'Não informado')) AS cliente_telefone
                 FROM agendamentos a
-                JOIN usuarios u ON a.cliente_id = u.id
+                LEFT JOIN usuarios u ON a.cliente_id = u.id
                 WHERE MONTH(a.data) = MONTH(%s) AND YEAR(a.data) = YEAR(%s) AND LOWER(a.status) IN ('concluido', 'finalizado')
                 ORDER BY a.data DESC, a.horario ASC
             """, (mes_ref, mes_ref,))
@@ -2656,7 +2677,7 @@ def api_admin_dados():
             cursor.execute("""
                 SELECT COUNT(*) as total 
                 FROM agendamentos a
-                JOIN usuarios u ON a.cliente_id = u.id
+                LEFT JOIN usuarios u ON a.cliente_id = u.id
                 WHERE DATE(a.data) = %s AND LOWER(a.status) IN ('concluido', 'finalizado')
             """, (data_filtro,))
             cortes_diario = cursor.fetchone()["total"]
@@ -2664,7 +2685,7 @@ def api_admin_dados():
             cursor.execute("""
                 SELECT COUNT(*) as total 
                 FROM agendamentos a
-                JOIN usuarios u ON a.cliente_id = u.id
+                LEFT JOIN usuarios u ON a.cliente_id = u.id
                 WHERE YEARWEEK(a.data, 1) = YEARWEEK(%s, 1) AND LOWER(a.status) IN ('concluido', 'finalizado')
             """, (semana_ref,))
             cortes_semanal = cursor.fetchone()["total"]
@@ -2672,7 +2693,7 @@ def api_admin_dados():
             cursor.execute("""
                 SELECT COUNT(*) as total 
                 FROM agendamentos a
-                JOIN usuarios u ON a.cliente_id = u.id
+                LEFT JOIN usuarios u ON a.cliente_id = u.id
                 WHERE MONTH(a.data) = MONTH(%s) AND YEAR(a.data) = YEAR(%s) AND LOWER(a.status) IN ('concluido', 'finalizado')
             """, (mes_ref, mes_ref,))
             cortes_mensal = cursor.fetchone()["total"]
@@ -2687,7 +2708,7 @@ def api_admin_dados():
             cursor.execute("""
                 SELECT a.servico, COUNT(*) AS quantidade
                 FROM agendamentos a
-                JOIN usuarios u ON a.cliente_id = u.id
+                LEFT JOIN usuarios u ON a.cliente_id = u.id
                 WHERE DATE(a.data) = %s AND LOWER(a.status) IN ('concluido', 'finalizado')
                 GROUP BY a.servico
                 ORDER BY quantidade DESC
@@ -2868,9 +2889,9 @@ def api_admin_comissoes():
 
             cursor.execute("""
                 SELECT a.id, a.barbeiro_id, a.profissional, a.data, a.horario, a.servico, a.preco,
-                       u.nome AS cliente_nome
+                       COALESCE(u.nome, NULLIF(a.cliente_nome, ''), 'Cliente sem cadastro') AS cliente_nome
                 FROM agendamentos a
-                JOIN usuarios u ON a.cliente_id = u.id
+                LEFT JOIN usuarios u ON a.cliente_id = u.id
                 WHERE DATE(a.data) BETWEEN %s AND %s
                   AND LOWER(a.status) IN ('concluido', 'finalizado')
                 ORDER BY a.data ASC, a.horario ASC
@@ -3069,6 +3090,11 @@ def api_admin_criar_agendamento():
     dados = request.get_json(silent=True) or {}
 
     cliente_id = parse_int(dados.get("cliente_id"), 1)
+    # Cliente sem cadastro no site: sem cliente_id, só o nome digitado pelo administrador
+    sem_cadastro = bool(dados.get("sem_cadastro")) or cliente_id is None
+    cliente_nome = " ".join(str(dados.get("cliente_nome") or "").split())
+    if sem_cadastro:
+        cliente_id = None
     barbeiro_id = parse_int(dados.get("barbeiro_id"), 1)
     data = str(dados.get("data") or "").strip()
     horario = str(dados.get("horario") or "").strip()
@@ -3083,8 +3109,11 @@ def api_admin_criar_agendamento():
     except ValueError:
         momento = None
 
-    if cliente_id is None:
-        return jsonify({"sucesso": False, "mensagem": "Escolha o cliente."}), 400
+    if sem_cadastro:
+        if len(cliente_nome) < 2 or len(cliente_nome) > 100:
+            return jsonify({"sucesso": False, "mensagem": "Informe o nome do cliente."}), 400
+        if tipo_pagamento in ("plano", "vip"):
+            return jsonify({"sucesso": False, "mensagem": "Cliente sem cadastro não tem plano. Escolha outra forma de pagamento."}), 400
     if barbeiro_id is None or not servico or len(servico) > 100:
         return jsonify({"sucesso": False, "mensagem": "Escolha o profissional e o serviço."}), 400
     if momento is None or horario not in HORARIOS_VALIDOS:
@@ -3093,15 +3122,16 @@ def api_admin_criar_agendamento():
         return jsonify({"sucesso": False, "mensagem": "Esse horário já passou."}), 400
     if not TELEFONE_RE.match(telefone):
         return jsonify({"sucesso": False, "mensagem": "Telefone inválido."}), 400
-    if tipo_pagamento in ("plano", "vip") and not cliente_tem_assinatura_ativa(cliente_id):
+    if not sem_cadastro and tipo_pagamento in ("plano", "vip") and not cliente_tem_assinatura_ativa(cliente_id):
         return jsonify({"sucesso": False, "mensagem": "Este cliente não possui assinatura ativa."}), 400
 
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT id FROM usuarios WHERE id = %s", (cliente_id,))
-            if not cursor.fetchone():
-                return jsonify({"sucesso": False, "mensagem": "Cliente não encontrado."}), 404
+            if not sem_cadastro:
+                cursor.execute("SELECT id FROM usuarios WHERE id = %s", (cliente_id,))
+                if not cursor.fetchone():
+                    return jsonify({"sucesso": False, "mensagem": "Cliente não encontrado."}), 404
 
             cursor.execute("SELECT nome FROM barbeiros WHERE id = %s AND ativo = 1", (barbeiro_id,))
             barb = cursor.fetchone()
@@ -3132,10 +3162,10 @@ def api_admin_criar_agendamento():
                 cursor.execute(
                     """
                     INSERT INTO agendamentos
-                    (cliente_id, barbeiro_id, profissional, data, horario, servico, tipo_pagamento, cliente_telefone, preco)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (cliente_id, cliente_nome, barbeiro_id, profissional, data, horario, servico, tipo_pagamento, cliente_telefone, preco)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
-                    (cliente_id, barbeiro_id, barb["nome"], data, horario, servico, tipo_pagamento, telefone, preco),
+                    (cliente_id, (cliente_nome if sem_cadastro else None), barbeiro_id, barb["nome"], data, horario, servico, tipo_pagamento, telefone, preco),
                 )
             except pymysql.err.IntegrityError:
                 conn.rollback()

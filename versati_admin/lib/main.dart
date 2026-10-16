@@ -7383,6 +7383,8 @@ class _AgendarClienteScreenState extends State<AgendarClienteScreen> {
   List<String> _horarios = [];
 
   Map<String, dynamic>? _cliente;
+  bool _semCadastro = false;
+  final TextEditingController _nomeAvulsoCtrl = TextEditingController();
   String? _barbeiroId;
   late DateTime _data;
   String? _horario;
@@ -7409,6 +7411,7 @@ class _AgendarClienteScreenState extends State<AgendarClienteScreen> {
   @override
   void dispose() {
     _telefoneCtrl.dispose();
+    _nomeAvulsoCtrl.dispose();
     super.dispose();
   }
 
@@ -7545,7 +7548,11 @@ class _AgendarClienteScreenState extends State<AgendarClienteScreen> {
   }
 
   Future<void> _salvar() async {
-    if (_cliente == null) return _snack('Escolha o cliente.', erro: true);
+    if (_semCadastro) {
+      if (_nomeAvulsoCtrl.text.trim().length < 2) return _snack('Informe o nome do cliente.', erro: true);
+    } else if (_cliente == null) {
+      return _snack('Escolha o cliente.', erro: true);
+    }
     if (_barbeiroId == null) return _snack('Escolha o profissional.', erro: true);
     if (_servico == null) return _snack('Escolha o serviço.', erro: true);
     if (_horario == null) return _snack('Escolha o horário.', erro: true);
@@ -7556,7 +7563,9 @@ class _AgendarClienteScreenState extends State<AgendarClienteScreen> {
         Uri.parse('${AppConfig.apiUrl}/admin/agendamentos'),
         headers: AppConfig.adminHeaders,
         body: jsonEncode({
-          'cliente_id': _cliente!['id'],
+          'sem_cadastro': _semCadastro,
+          'cliente_id': _semCadastro ? null : _cliente!['id'],
+          'cliente_nome': _semCadastro ? _nomeAvulsoCtrl.text.trim() : null,
           'barbeiro_id': int.tryParse(_barbeiroId!) ?? 0,
           'data': _fmtApi(_data),
           'horario': _horario,
@@ -7638,12 +7647,37 @@ class _AgendarClienteScreenState extends State<AgendarClienteScreen> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                _campoToque(
-                  icone: Icons.person_search,
-                  rotulo: 'Cliente',
-                  valor: _cliente == null ? 'Toque para escolher' : (_cliente!['nome'] ?? '').toString(),
-                  onTap: _escolherCliente,
+                Container(
+                  decoration: BoxDecoration(color: _cardColor, borderRadius: BorderRadius.circular(12)),
+                  child: SwitchListTile(
+                    value: _semCadastro,
+                    activeColor: _brandRed,
+                    title: const Text('Cliente sem cadastro no site',
+                        style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+                    subtitle: Text('Agende só com o nome, sem precisar cadastrar',
+                        style: TextStyle(color: _textSecondary, fontSize: 11)),
+                    onChanged: (v) => setState(() {
+                      _semCadastro = v;
+                      if (v && _pagamento == 'plano') _pagamento = 'presencial';
+                    }),
+                  ),
                 ),
+                const SizedBox(height: 12),
+                if (_semCadastro)
+                  TextField(
+                    controller: _nomeAvulsoCtrl,
+                    maxLength: 100,
+                    textCapitalization: TextCapitalization.words,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: _decoracao('Nome do cliente', Icons.person_outline).copyWith(counterText: ''),
+                  )
+                else
+                  _campoToque(
+                    icone: Icons.person_search,
+                    rotulo: 'Cliente',
+                    valor: _cliente == null ? 'Toque para escolher' : (_cliente!['nome'] ?? '').toString(),
+                    onTap: _escolherCliente,
+                  ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   value: _barbeiroId,
@@ -7724,6 +7758,7 @@ class _AgendarClienteScreenState extends State<AgendarClienteScreen> {
                   style: const TextStyle(color: Colors.white, fontSize: 15),
                   decoration: _decoracao('Forma de pagamento', Icons.payments_outlined),
                   items: _formasPagamento.entries
+                      .where((e) => !(_semCadastro && e.key == 'plano'))
                       .map((e) => DropdownMenuItem<String>(value: e.key, child: Text(e.value)))
                       .toList(),
                   onChanged: (v) => setState(() => _pagamento = v ?? 'presencial'),
