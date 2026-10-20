@@ -652,10 +652,16 @@
             {% if cliente_id %}
                 <a href="/meus-agendamentos" style="color: var(--brass); font-weight: 600;">Meus Agendamentos</a>
             {% endif %}
+            {% if admin %}
+                <a href="/admin/agendar" style="color: var(--brass); font-weight: 600;">Agendar Clientes</a>
+            {% endif %}
         </nav>
         <div class="user-nav-area" id="userNavArea">
             {% if cliente_id %}
                 <span class="btn-user-badge">Olá, {{ cliente_nome }}</span>
+                <a href="/sair" class="btn-nav-outline" style="color: #d81f2c !important; border-color: #d81f2c !important; text-decoration: none;">Sair</a>
+            {% elif admin %}
+                <span class="btn-user-badge">Administrador</span>
                 <a href="/sair" class="btn-nav-outline" style="color: #d81f2c !important; border-color: #d81f2c !important; text-decoration: none;">Sair</a>
             {% else %}
                 <a href="/login" class="btn-nav-outline" style="text-decoration: none;">Entrar</a>
@@ -670,7 +676,11 @@
         <p>Corte, barba e cuidado de verdade — no seu tempo, do seu jeito.</p>
         
         <div class="hero-buttons">
-            <a href="/agendar" class="btn-hero-red">Agendar Horário</a>
+            {% if admin %}
+                <a href="/admin/agendar" class="btn-hero-red">Agendar Cliente</a>
+            {% else %}
+                <a href="/agendar" class="btn-hero-red">Agendar Horário</a>
+            {% endif %}
             <a href="/planos" class="btn-hero-outline">Planos de Assinatura</a>
             <a href="https://wa.me/5583986429833" target="_blank" class="btn-hero-outline">Falar no WhatsApp</a>
             {% if cliente_id %}

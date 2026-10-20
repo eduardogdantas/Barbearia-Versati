@@ -261,6 +261,55 @@ def admin_required(f):
     return wrapper
 
 
+ADMIN_SESSAO_HORAS = 12
+
+
+def _credenciais_admin_ok(email, senha):
+    """Confere e-mail + senha do administrador (mesmas variáveis usadas pelo app)."""
+    email = str(email or "").strip().lower()
+    configurado = bool(ADMIN_EMAIL and ADMIN_PASSWORD_HASH)
+    email_ok = configurado and hmac.compare_digest(email.encode("utf-8"), ADMIN_EMAIL.encode("utf-8"))
+    try:
+        # sempre confere um hash, para o tempo de resposta não revelar se o e-mail existe
+        senha_ok = check_password_hash(ADMIN_PASSWORD_HASH or HASH_FALSO, str(senha or ""))
+    except ValueError:
+        senha_ok = False
+    return bool(configurado and email_ok and senha_ok)
+
+
+def _admin_web_logado():
+    """True quando o administrador entrou pelo site (/login) e a sessão ainda vale."""
+    if not ADMIN_EMAIL or not ADMIN_PASSWORD_HASH or not session.get("admin"):
+        return False
+    try:
+        desde = float(session.get("admin_desde", 0))
+    except (TypeError, ValueError):
+        return False
+    if time.time() - desde > ADMIN_SESSAO_HORAS * 3600:
+        return False
+    # trocar a senha do admin derruba as sessões antigas
+    return hmac.compare_digest(str(session.get("admin_v", "")), _versao_credencial_admin())
+
+
+def admin_ou_sessao_required(f):
+    """Aceita o token do app OU a sessão do admin no site (esta exige o cabeçalho X-Requested-With)."""
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if request.method == "OPTIONS":
+            return "", 204
+
+        chave = f"admin-falha:{_ip_cliente()}"
+        if _limite_excedido(chave, 10, 300):
+            return jsonify({"sucesso": False, "mensagem": "Muitas tentativas. Aguarde alguns minutos."}), 429
+
+        if _token_admin_valido() or (_admin_web_logado() and request.headers.get("X-Requested-With") == "fetch"):
+            return f(*args, **kwargs)
+
+        _registrar_tentativa(chave)
+        return jsonify({"sucesso": False, "mensagem": "Não autorizado"}), 401
+    return wrapper
+
+
 class CustomJSONProvider(DefaultJSONProvider):
     """Converte objetos Decimal em float para não quebrar a serialização JSON."""
     ensure_ascii = False
@@ -3097,7 +3146,7 @@ def api_admin_comissoes_estornar():
 # ADMIN AGENDA UM CLIENTE
 # ==============================================================================
 @app.route("/api/admin/agendamentos", methods=["POST", "OPTIONS"])
-@admin_required
+@admin_ou_sessao_required
 def api_admin_criar_agendamento():
     dados = request.get_json(silent=True) or {}
 
@@ -3432,7 +3481,15 @@ def cancelar_agendamento(id):
 
 @app.route("/")
 def home():
-    return render_template("site.html", cliente_id=session.get("cliente_id"), cliente_nome=session.get("cliente_nome"))
+    resp = app.make_response(render_template(
+        "site.html",
+        cliente_id=session.get("cliente_id"),
+        cliente_nome=session.get("cliente_nome"),
+        admin=_admin_web_logado(),  # só o administrador logado vê as opções de agendar clientes
+    ))
+    if _admin_web_logado():
+        resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -3442,6 +3499,15 @@ def login():
     if request.method == "POST":
         email = request.form.get("email")
         senha = request.form.get("senha")
+
+        # Administrador: e-mail e senha do admin entram direto na página de agendamento
+        if _credenciais_admin_ok(email, senha):
+            session.clear()  # evita fixação de sessão
+            session.permanent = True
+            session["admin"] = True
+            session["admin_desde"] = time.time()
+            session["admin_v"] = _versao_credencial_admin()
+            return redirect(url_for("home"))
 
         conn = get_db_connection()
         try:
@@ -3721,6 +3787,27 @@ def reenviar_codigo_senha():
     _iniciar_redefinicao_senha(email)
     session["reset_aviso"] = MSG_CODIGO_ENVIADO
     return redirect(url_for("redefinir_senha"))
+
+
+@app.route("/admin/agendar", methods=["GET"])
+def admin_agendar():
+    """Tela de agendamento do administrador no site (mesmo fluxo da tela 'Agendar cliente' do app)."""
+    if not _admin_web_logado():
+        return redirect(url_for("login"))
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id, nome FROM barbeiros WHERE ativo = 1 ORDER BY nome")
+            barbeiros = cursor.fetchall()
+            cursor.execute("SELECT id, nome, email FROM usuarios ORDER BY nome")
+            clientes = cursor.fetchall()
+    finally:
+        conn.close()
+
+    resp = app.make_response(render_template("admin_agendar.html", barbeiros=barbeiros, clientes=clientes))
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @app.route("/agendar", methods=["GET", "POST"])

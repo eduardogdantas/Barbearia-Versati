@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Agendar cliente | Versati</title>
+  <style>
+    :root {
+      --fundo: #121212;
+      --card: #1e1e1e;
+      --borda: #2e2e2e;
+      --texto: #ffffff;
+      --texto-2: #9e9e9e;
+      --marca: #cf243e;
+      --marca-escura: #a81b31;
+      --ok: #1f9d8a;
+      --erro: #e5484d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--fundo);
+      color: var(--texto);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      line-height: 1.45;
+    }
+    header {
+      background: var(--card);
+      border-bottom: 1px solid var(--borda);
+    }
+    .topo {
+      max-width: 640px;
+      margin: 0 auto;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .topo h1 { margin: 0; font-size: 1.05rem; font-weight: 700; }
+    .topo a { color: var(--texto-2); font-size: .9rem; text-decoration: none; }
+    .topo a:hover, .topo a:focus-visible { color: var(--texto); text-decoration: underline; }
+    main { max-width: 640px; margin: 0 auto; padding: 20px 16px 48px; }
+    .campo { margin-bottom: 18px; }
+    label, .rotulo { display: block; font-size: .85rem; color: var(--texto-2); margin-bottom: 6px; }
+    input[type=text], input[type=tel], input[type=date], select {
+      width: 100%;
+      background: var(--card);
+      color: var(--texto);
+      border: 1px solid var(--borda);
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 1rem;
+      font-family: inherit;
+      color-scheme: dark;
+    }
+    input:focus-visible, select:focus-visible, button:focus-visible, .chip:focus-visible, .cliente-item:focus-visible {
+      outline: 2px solid var(--marca);
+      outline-offset: 2px;
+    }
+    .troca { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+    .troca input { width: 20px; height: 20px; accent-color: var(--marca); }
+    .troca label { margin: 0; color: var(--texto); font-size: .95rem; }
+    #lista-clientes {
+      margin-top: 6px;
+      max-height: 220px;
+      overflow-y: auto;
+      border: 1px solid var(--borda);
+      border-radius: 10px;
+      background: var(--card);
+    }
+    .cliente-item {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: none;
+      border: 0;
+      border-bottom: 1px solid var(--borda);
+      color: var(--texto);
+      padding: 10px 14px;
+      font: inherit;
+      cursor: pointer;
+    }
+    .cliente-item:last-child { border-bottom: 0; }
+    .cliente-item:hover { background: #262626; }
+    .cliente-item small { display: block; color: var(--texto-2); }
+    .vazio { padding: 12px 14px; color: var(--texto-2); font-size: .9rem; }
+    #cliente-escolhido {
+      margin-top: 8px;
+      padding: 10px 14px;
+      border-left: 3px solid var(--marca);
+      background: var(--card);
+      border-radius: 6px;
+      font-size: .95rem;
+    }
+    #horarios { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip {
+      background: var(--card);
+      color: var(--texto);
+      border: 1px solid var(--borda);
+      border-radius: 999px;
+      padding: 8px 14px;
+      font: inherit;
+      cursor: pointer;
+    }
+    .chip:hover { border-color: var(--marca); }
+    .chip[aria-pressed=true] { background: var(--marca); border-color: var(--marca); font-weight: 700; }
+    .dica { color: var(--texto-2); font-size: .9rem; margin: 0; }
+    #enviar {
+      width: 100%;
+      background: var(--marca);
+      color: #fff;
+      border: 0;
+      border-radius: 10px;
+      padding: 14px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    #enviar:hover:not(:disabled) { background: var(--marca-escura); }
+    #enviar:disabled { opacity: .6; cursor: default; }
+    #aviso {
+      margin: 0 0 18px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      font-size: .95rem;
+    }
+    #aviso.ok { background: rgba(31, 157, 138, .15); border: 1px solid var(--ok); }
+    #aviso.erro { background: rgba(229, 72, 77, .15); border: 1px solid var(--erro); }
+    #aviso a { color: inherit; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="topo">
+      <h1>Agendar cliente</h1>
+      <span><a href="{{ url_for('home') }}">Voltar ao site</a> &nbsp; <a href="{{ url_for('sair') }}">Sair</a></span>
+    </div>
+  </header>
+
+  <main>
+    <div id="aviso" role="status" hidden></div>
+
+    <div class="troca">
+      <input type="checkbox" id="sem-cadastro">
+      <label for="sem-cadastro">Cliente sem cadastro no site</label>
+    </div>
+
+    <div class="campo" id="bloco-cadastrado">
+      <label for="busca-cliente">Cliente</label>
+      <input type="text" id="busca-cliente" placeholder="Buscar por nome ou e-mail" autocomplete="off">
+      <div id="lista-clientes" hidden></div>
+      <div id="cliente-escolhido" hidden></div>
+    </div>
+
+    <div class="campo" id="bloco-avulso" hidden>
+      <label for="nome-avulso">Nome do cliente</label>
+      <input type="text" id="nome-avulso" maxlength="100" autocomplete="off">
+    </div>
+
+    <div class="campo">
+      <label for="barbeiro">Profissional</label>
+      <select id="barbeiro">
+        <option value="">Escolha o profissional</option>
+        {% for b in barbeiros %}
+        <option value="{{ b.id }}">{{ b.nome }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="campo">
+      <label for="servico">Serviço</label>
+      <select id="servico" disabled>
+        <option value="">Escolha o profissional primeiro</option>
+      </select>
+    </div>
+
+    <div class="campo">
+      <label for="data">Data</label>
+      <input type="date" id="data">
+    </div>
+
+    <div class="campo">
+      <span class="rotulo" id="rotulo-horarios">Horário</span>
+      <div id="horarios" role="group" aria-labelledby="rotulo-horarios">
+        <p class="dica">Escolha o profissional e a data para ver os horários livres.</p>
+      </div>
+    </div>
+
+    <div class="campo">
+      <label for="pagamento">Forma de pagamento</label>
+      <select id="pagamento">
+        <option value="presencial">Pagar no local</option>
+        <option value="pix">Pix</option>
+        <option value="cartao">Cartão</option>
+        <option value="debito">Débito</option>
+        <option value="credito">Crédito</option>
+        <option value="dinheiro">Dinheiro</option>
+        <option value="plano" id="opcao-plano">Plano (assinante)</option>
+      </select>
+    </div>
+
+    <div class="campo">
+      <label for="telefone">Telefone (opcional)</label>
+      <input type="tel" id="telefone" maxlength="20" inputmode="tel" autocomplete="off">
+    </div>
+
+    <button type="button" id="enviar">Agendar cliente</button>
+  </main>
+
+  <script type="application/json" id="dados-clientes">{{ clientes|tojson }}</script>
+  <script>
+    const CLIENTES = JSON.parse(document.getElementById('dados-clientes').textContent);
+
+    const el = (id) => document.getElementById(id);
+    const semCadastro = el('sem-cadastro');
+    const buscaCliente = el('busca-cliente');
+    const listaClientes = el('lista-clientes');
+    const clienteEscolhidoBox = el('cliente-escolhido');
+    const nomeAvulso = el('nome-avulso');
+    const barbeiro = el('barbeiro');
+    const servico = el('servico');
+    const dataInput = el('data');
+    const horariosBox = el('horarios');
+    const pagamento = el('pagamento');
+    const telefone = el('telefone');
+    const enviar = el('enviar');
+    const aviso = el('aviso');
+
+    let clienteEscolhido = null;
+    let horarioEscolhido = null;
+
+    function dataLocalISO(d) {
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${d.getFullYear()}-${mm}-${dd}`;
+    }
+
+    function mostrarAviso(texto, tipo, link) {
+      aviso.textContent = texto;
+      aviso.className = tipo;
+      if (link) {
+        aviso.append(' ');
+        const a = document.createElement('a');
+        a.href = link.href;
+        a.textContent = link.texto;
+        aviso.append(a);
+      }
+      aviso.hidden = false;
+      aviso.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function limparAviso() { aviso.hidden = true; }
+
+    // Data: hoje por padrão, sem datas passadas
+    const hoje = dataLocalISO(new Date());
+    dataInput.min = hoje;
+    dataInput.value = hoje;
+
+    // ---------- Cliente ----------
+    function renderizarClientes(termo) {
+      const t = termo.trim().toLowerCase();
+      listaClientes.replaceChildren();
+      if (!t) { listaClientes.hidden = true; return; }
+      const achados = CLIENTES.filter(c =>
+        (c.nome || '').toLowerCase().includes(t) || (c.email || '').toLowerCase().includes(t)
+      ).slice(0, 30);
+      if (!achados.length) {
+        const v = document.createElement('div');
+        v.className = 'vazio';
+        v.textContent = 'Nenhum cliente encontrado. Marque "Cliente sem cadastro no site" para digitar só o nome.';
+        listaClientes.append(v);
+      } else {
+        achados.forEach(c => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'cliente-item';
+          b.textContent = c.nome || 'Cliente sem nome';
+          const s = document.createElement('small');
+          s.textContent = c.email || '';
+          b.append(s);
+          b.addEventListener('click', () => escolherCliente(c));
+          listaClientes.append(b);
+        });
+      }
+      listaClientes.hidden = false;
+    }
+
+    function escolherCliente(c) {
+      clienteEscolhido = c;
+      clienteEscolhidoBox.textContent = `${c.nome || 'Cliente sem nome'}${c.email ? ' (' + c.email + ')' : ''}`;
+      clienteEscolhidoBox.hidden = false;
+      listaClientes.hidden = true;
+      buscaCliente.value = '';
+    }
+
+    buscaCliente.addEventListener('input', () => renderizarClientes(buscaCliente.value));
+
+    semCadastro.addEventListener('change', () => {
+      const avulso = semCadastro.checked;
+      el('bloco-cadastrado').hidden = avulso;
+      el('bloco-avulso').hidden = !avulso;
+      el('opcao-plano').hidden = avulso;
+      el('opcao-plano').disabled = avulso;
+      if (avulso && pagamento.value === 'plano') pagamento.value = 'presencial';
+    });
+
+    // ---------- Profissional, serviços e horários ----------
+    async function carregarServicos() {
+      servico.replaceChildren();
+      const id = barbeiro.value;
+      if (!id) {
+        servico.disabled = true;
+        servico.append(new Option('Escolha o profissional primeiro', ''));
+        return;
+      }
+      servico.disabled = true;
+      servico.append(new Option('Carregando...', ''));
+      try {
+        const r = await fetch(`/api/servicos?barbeiro_id=${encodeURIComponent(id)}`);
+        const j = await r.json();
+        servico.replaceChildren(new Option('Escolha o serviço', ''));
+        (j.servicos || []).forEach(s => {
+          const preco = Number(s.preco || 0).toFixed(2).replace('.', ',');
+          servico.append(new Option(`${s.nome} - R$ ${preco}`, s.nome));
+        });
+        servico.disabled = false;
+      } catch (e) {
+        servico.replaceChildren(new Option('Erro ao carregar serviços', ''));
+        mostrarAviso('Não foi possível carregar os serviços. Recarregue a página.', 'erro');
+      }
+    }
+
+    async function carregarHorarios() {
+      horarioEscolhido = null;
+      horariosBox.replaceChildren();
+      const id = barbeiro.value;
+      const d = dataInput.value;
+      if (!id || !d) {
+        const p = document.createElement('p');
+        p.className = 'dica';
+        p.textContent = 'Escolha o profissional e a data para ver os horários livres.';
+        horariosBox.append(p);
+        return;
+      }
+      try {
+        const r = await fetch(`/api/horarios-disponiveis?barbeiro_id=${encodeURIComponent(id)}&data=${encodeURIComponent(d)}`);
+        const lista = await r.json();
+        if (!Array.isArray(lista) || !lista.length) {
+          const p = document.createElement('p');
+          p.className = 'dica';
+          p.textContent = 'Sem horários livres nesse dia. Tente outra data.';
+          horariosBox.append(p);
+          return;
+        }
+        lista.forEach(h => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'chip';
+          b.textContent = h;
+          b.setAttribute('aria-pressed', 'false');
+          b.addEventListener('click', () => {
+            horariosBox.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', 'false'));
+            b.setAttribute('aria-pressed', 'true');
+            horarioEscolhido = h;
+          });
+          horariosBox.append(b);
+        });
+      } catch (e) {
+        const p = document.createElement('p');
+        p.className = 'dica';
+        p.textContent = 'Erro ao carregar horários. Tente novamente.';
+        horariosBox.append(p);
+      }
+    }
+
+    barbeiro.addEventListener('change', () => { carregarServicos(); carregarHorarios(); });
+    dataInput.addEventListener('change', carregarHorarios);
+
+    // ---------- Salvar ----------
+    enviar.addEventListener('click', async () => {
+      limparAviso();
+      const avulso = semCadastro.checked;
+
+      if (avulso) {
+        if (nomeAvulso.value.trim().length < 2) return mostrarAviso('Informe o nome do cliente.', 'erro');
+      } else if (!clienteEscolhido) {
+        return mostrarAviso('Escolha o cliente.', 'erro');
+      }
+      if (!barbeiro.value) return mostrarAviso('Escolha o profissional.', 'erro');
+      if (!servico.value) return mostrarAviso('Escolha o serviço.', 'erro');
+      if (!dataInput.value) return mostrarAviso('Escolha a data.', 'erro');
+      if (!horarioEscolhido) return mostrarAviso('Escolha o horário.', 'erro');
+
+      enviar.disabled = true;
+      try {
+        const r = await fetch('/api/admin/agendamentos', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
+          body: JSON.stringify({
+            sem_cadastro: avulso,
+            cliente_id: avulso ? null : clienteEscolhido.id,
+            cliente_nome: avulso ? nomeAvulso.value.trim() : null,
+            barbeiro_id: parseInt(barbeiro.value, 10),
+            data: dataInput.value,
+            horario: horarioEscolhido,
+            servico: servico.value,
+            tipo_pagamento: pagamento.value,
+            cliente_telefone: telefone.value.trim()
+          })
+        });
+        let j = {};
+        try { j = await r.json(); } catch (_) {}
+
+        if (r.status === 201) {
+          mostrarAviso('Cliente agendado com sucesso!', 'ok');
+          nomeAvulso.value = '';
+          telefone.value = '';
+          clienteEscolhido = null;
+          clienteEscolhidoBox.hidden = true;
+          carregarHorarios();
+        } else if (r.status === 401) {
+          mostrarAviso('Sua sessão de administrador expirou.', 'erro', { href: '/login', texto: 'Entrar novamente' });
+        } else {
+          mostrarAviso(j.mensagem || 'Não foi possível agendar.', 'erro');
+          if (r.status === 409) carregarHorarios();
+        }
+      } catch (e) {
+        mostrarAviso('Erro de conexão com o servidor.', 'erro');
+      } finally {
+        enviar.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
