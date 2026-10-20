@@ -783,12 +783,12 @@
             <div class="sobre-card-info" id="contato">
                 <h4>Horário de Atendimento</h4>
                 <div class="horarios-list">
-                    <div class="horario-linha"><span>Segunda-feira</span><span>09:00 – 19:00</span></div>
-                    <div class="horario-linha"><span>Terça-feira</span><span>09:00 – 19:00</span></div>
-                    <div class="horario-linha"><span>Quarta-feira</span><span>09:00 – 19:00</span></div>
-                    <div class="horario-linha"><span>Quinta-feira</span><span>09:00 – 19:00</span></div>
-                    <div class="horario-linha hoje"><span>Sexta-feira (Hoje)</span><span>09:00 – 19:00</span></div>
-                    <div class="horario-linha"><span>Sábado</span><span>09:00 – 19:00</span></div>
+                    <div class="horario-linha" data-dia="1"><span>Segunda-feira</span><span>09:00 – 19:00</span></div>
+                    <div class="horario-linha" data-dia="2"><span>Terça-feira</span><span>09:00 – 19:00</span></div>
+                    <div class="horario-linha" data-dia="3"><span>Quarta-feira</span><span>09:00 – 19:00</span></div>
+                    <div class="horario-linha" data-dia="4"><span>Quinta-feira</span><span>09:00 – 19:00</span></div>
+                    <div class="horario-linha" data-dia="5"><span>Sexta-feira</span><span>09:00 – 19:00</span></div>
+                    <div class="horario-linha" data-dia="6"><span>Sábado</span><span>09:00 – 19:00</span></div>
                 </div>
             </div>
 
@@ -987,9 +987,24 @@
         }
 
         // Executa a função assim que a página é aberta
+        // Destaca o dia de hoje (fuso da barbearia, João Pessoa) na lista de horários
+        function destacarDiaAtual() {
+            const dias = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+            const abrev = new Intl.DateTimeFormat("en-US", { weekday: "short", timeZone: "America/Fortaleza" }).format(new Date());
+            const hoje = dias[abrev];
+            document.querySelectorAll(".horario-linha[data-dia]").forEach(linha => {
+                if (Number(linha.dataset.dia) === hoje) {
+                    linha.classList.add("hoje");
+                    const nome = linha.querySelector("span");
+                    if (nome && !nome.textContent.includes("(Hoje)")) nome.textContent += " (Hoje)";
+                }
+            });
+        }
+
         document.addEventListener("DOMContentLoaded", () => {
             carregarProdutosWeb();
             configurarMenuMobile();
+            destacarDiaAtual();
         });
     </script>
 </body>
