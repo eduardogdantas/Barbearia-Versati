@@ -11,7 +11,7 @@ import 'dart:typed_data';
 // CONFIGURAÇÃO CENTRAL DA API E SEGURANÇA
 // ==============================================================================
 class AppConfig {
-  static const String baseUrl = 'https://barbearia-versati.onrender.com'; // Substitua pelo endereço do seu servidor
+  static const String baseUrl = 'https://barbearia-versati-production.up.railway.app'; // Substitua pelo endereço do seu servidor
   static const String apiUrl = '$baseUrl/api';
 
   // O token NÃO fica mais no código: ele vem do login do admin (/api/admin/login)
