@@ -38,20 +38,27 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 16px;
             margin-bottom: 16px;
         }
         .sub-card.ativo { border-color: rgba(34, 197, 94, 0.4); }
+        .sub-card.vencido { border-color: rgba(245, 158, 11, 0.4); }
+        .sub-card.cancelado { border-color: rgba(216, 31, 44, 0.4); }
+
         .badge {
             display: inline-block;
             padding: 4px 10px;
             border-radius: 6px;
             font-size: 0.8rem;
             font-weight: 700;
+            margin-top: 8px;
             background: rgba(34, 197, 94, 0.15);
             color: #22c55e;
-            margin-top: 8px;
         }
-        .preco { font-family: 'Anton', sans-serif; font-size: 1.6rem; color: var(--brand-red); }
+        .badge.vencido { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+        .badge.cancelado { background: rgba(216, 31, 44, 0.15); color: #d81f2c; }
+
+        .preco { font-family: 'Anton', sans-serif; font-size: 1.6rem; color: var(--brand-red); white-space: nowrap; }
         .btn-voltar {
             background: transparent;
             color: var(--text);
@@ -63,6 +70,15 @@
             display: inline-block;
             margin-top: 20px;
         }
+        .btn-renovar {
+            border-color: var(--brand-red);
+            color: var(--brand-red);
+            margin-top: 12px;
+            padding: 8px 16px;
+        }
+        @media (max-width: 520px) {
+            .sub-card { flex-direction: column; align-items: flex-start; }
+        }
     </style>
 </head>
 <body>
@@ -72,12 +88,20 @@
 
         {% if assinaturas and assinaturas|length > 0 %}
             {% for sub in assinaturas %}
-            <div class="sub-card {% if sub.status == 'ativo' %}ativo{% endif %}">
+            {% set st = (sub.status or '')|lower %}
+            {% set classe = 'ativo' if st in ['ativo','active','authorized','approved','confirmado'] else ('vencido' if st in ['vencido','expired'] else 'cancelado') %}
+            <div class="sub-card {{ classe }}">
                 <div>
                     <h3 style="font-family: 'Anton', sans-serif; font-size: 1.4rem;">{{ sub.nome_plano }}</h3>
                     <p style="color: var(--text-dim); font-size: 0.95rem; margin-top: 4px;">Início: {{ sub.data_inicio }}</p>
-                    <p style="color: var(--text-dim); font-size: 0.95rem;">Próxima Renovação: <strong style="color: #fff;">{{ sub.validade }}</strong></p>
-                    <span class="badge">{{ sub.status|upper }}</span>
+                    <p style="color: var(--text-dim); font-size: 0.95rem;">
+                        {% if classe == 'ativo' %}Próxima Renovação{% elif classe == 'vencido' %}Venceu em{% else %}Válida até{% endif %}:
+                        <strong style="color: #fff;">{{ sub.validade }}</strong>
+                    </p>
+                    <span class="badge {{ classe }}">{{ classe|upper }}</span>
+                    {% if classe == 'vencido' %}
+                    <div><a href="/planos" class="btn-voltar btn-renovar">Renovar plano</a></div>
+                    {% endif %}
                 </div>
                 <div>
                     <div class="preco">R$ {{ "%.2f"|format(sub.preco)|replace('.', ',') }}/mês</div>

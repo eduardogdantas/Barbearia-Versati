@@ -3332,8 +3332,9 @@ def admin_planos_ativos():
             planos_raw = cursor.fetchall()
 
             planos = []
+            hoje = datetime.now().date()
             for p in planos_raw:
-                # Tratamento e conversão ultra-segura de datas para string
+                validade_data = p.get("validade")
                 for campo in ["inicio", "validade", "cliente_desde"]:
                     val = p.get(campo)
                     if val:
@@ -3358,6 +3359,7 @@ def admin_planos_ativos():
 
                 # Normalização flexível do status para o painel admin
                 st = str(p.get("status") or "").strip().lower()
+                venceu = bool(validade_data and validade_data < hoje)
                 if st in ["ativo", "active", "authorized", "approved", "confirmado"]:
                     p["status"] = "ativo"
                 elif st in ["vencido", "expired"]:
@@ -3386,6 +3388,13 @@ def admin_cobrar_assinatura():
     try:
         with conn.cursor() as cursor:
             # Busca os dados da assinatura e do cliente
+            cursor.execute("""
+                UPDATE assinaturas
+                SET status = 'vencido'
+                WHERE LOWER(status) IN ('ativo', 'active', 'authorized', 'approved', 'confirmado')
+                  AND data_renovacao < CURDATE()
+            """)
+            conn.commit()
             cursor.execute("""
                 SELECT a.id, a.cliente_id, a.nome_plano, a.preco, a.gateway_subscription_id, u.email, u.nome
                 FROM assinaturas a
