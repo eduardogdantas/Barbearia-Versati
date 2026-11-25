@@ -49,7 +49,7 @@ ADMIN_PASSWORD_HASH = (os.environ.get("ADMIN_PASSWORD_HASH") or "").strip()
 ADMIN_TOKEN_DIAS = int(os.environ.get("ADMIN_TOKEN_DIAS", "30") or 30)
 MERCADO_PAGO_WEBHOOK_SECRET = os.environ.get("MERCADO_PAGO_WEBHOOK_SECRET")
 DEBUG_MODE = os.environ.get("FLASK_DEBUG", "False").lower() == "true"
-PUBLIC_BASE_URL = (os.environ.get("PUBLIC_BASE_URL") or "http://127.0.0.1:5000").rstrip("/")
+PUBLIC_BASE_URL = (os.environ.get("PUBLIC_BASE_URL") or "barbearia-versati-production.up.railway.app").rstrip("/")
 CORS_ORIGINS = [o.strip().rstrip("/") for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
 
 if not ADMIN_EMAIL or not ADMIN_PASSWORD_HASH:
