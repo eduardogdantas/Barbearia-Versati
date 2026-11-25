@@ -387,6 +387,49 @@
             letter-spacing: 0.02em;
         }
 
+        /* Seção de Avaliações */
+        .avaliacoes-section {
+            width: 100%;
+            max-width: 1100px;
+            padding: 80px 20px;
+            text-align: center;
+            border-top: 1px solid var(--stroke);
+        }
+        .avaliacoes-section h2 {
+            font-family: 'Anton', sans-serif;
+            font-size: 2.8rem;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+            letter-spacing: 0.03em;
+        }
+        .avaliacoes-resumo {
+            color: var(--text-dim);
+            font-size: 1.1rem;
+            margin-bottom: 45px;
+        }
+        .avaliacoes-resumo .media { color: #f5b301; font-weight: 700; }
+        .avaliacoes-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 340px));
+            gap: 24px;
+            justify-content: center;
+            width: 100%;
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+        .avaliacao-item {
+            background: var(--bg-card);
+            border: 1px solid var(--stroke);
+            border-radius: 12px;
+            padding: 24px;
+            text-align: left;
+        }
+        .avaliacao-item .estrelas-fixas { color: #f5b301; font-size: 1.2rem; letter-spacing: 2px; margin-bottom: 10px; }
+        .avaliacao-item .estrelas-fixas .vazia { color: var(--stroke); }
+        .avaliacao-item .comentario { color: var(--text); font-size: 0.95rem; line-height: 1.6; margin-bottom: 14px; }
+        .avaliacao-item .autor { font-weight: 600; font-size: 0.95rem; }
+        .avaliacao-item .detalhe { color: var(--text-dim); font-size: 0.85rem; margin-top: 2px; }
+
         /* Seção Sobre */
         .sobre-section {
             width: 100%;
@@ -742,6 +785,15 @@
         </div>
     </section>
 
+    <!-- Seção de Avaliações dos Clientes -->
+    <section class="avaliacoes-section" id="avaliacoes">
+        <div class="section-tag">Depoimentos</div>
+        <h2>Avaliações dos Clientes</h2>
+        <p class="avaliacoes-resumo" id="avaliacoes-resumo">Carregando avaliações...</p>
+
+        <div class="avaliacoes-grid" id="avaliacoes-grid-container"></div>
+    </section>
+
     <!-- Seção Sobre & Informações da Barbearia -->
     <section class="sobre-section" id="sobre">
         <div class="sobre-container">
@@ -947,6 +999,43 @@
             }
         }
 
+        async function carregarAvaliacoesWeb() {
+            const secao = document.getElementById('avaliacoes');
+            const container = document.getElementById('avaliacoes-grid-container');
+            const resumo = document.getElementById('avaliacoes-resumo');
+            if (!container || !resumo) return;
+
+            try {
+                const response = await fetch('/api/avaliacoes');
+                const data = await response.json();
+
+                if (!data.sucesso || !data.avaliacoes || data.avaliacoes.length === 0) {
+                    resumo.textContent = 'Ainda não há avaliações. Seja o primeiro a avaliar após o seu atendimento!';
+                    return;
+                }
+
+                const plural = data.total === 1 ? 'avaliação' : 'avaliações';
+                resumo.innerHTML = `<span class="media">★ ${Number(data.media).toFixed(1).replace('.', ',')}</span> · ${data.total} ${plural}`;
+
+                container.innerHTML = data.avaliacoes.map(av => {
+                    const cheias = '★'.repeat(av.nota);
+                    const vazias = '★'.repeat(5 - av.nota);
+                    const detalhe = [av.servico, av.profissional ? 'com ' + av.profissional : '', av.data]
+                        .filter(Boolean).map(escHtml).join(' · ');
+                    return `
+    <div class="avaliacao-item">
+        <div class="estrelas-fixas">${cheias}<span class="vazia">${vazias}</span></div>
+        ${av.comentario ? `<p class="comentario">“${escHtml(av.comentario)}”</p>` : ''}
+        <div class="autor">${escHtml(av.nome)}</div>
+        <div class="detalhe">${detalhe}</div>
+    </div>`;
+                }).join('');
+            } catch (error) {
+                console.error("Erro ao carregar avaliações:", error);
+                if (secao) secao.style.display = 'none';
+            }
+        }
+
         // ======================================================
         // MENU HAMBÚRGUER (celular)
         // Abre e fecha a navegação quando a tela é pequena.
@@ -1003,6 +1092,7 @@
 
         document.addEventListener("DOMContentLoaded", () => {
             carregarProdutosWeb();
+            carregarAvaliacoesWeb();
             configurarMenuMobile();
             destacarDiaAtual();
         });

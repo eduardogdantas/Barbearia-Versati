@@ -339,6 +339,33 @@ def garantir_coluna_concluido_em():
         print("Aviso: não foi possível garantir a coluna concluido_em:", e)
 
 
+def garantir_tabela_avaliacoes():
+    """Cria a tabela avaliacoes (uma avaliação por agendamento concluído)."""
+    try:
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS avaliacoes (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        agendamento_id INT NOT NULL UNIQUE,
+                        cliente_id INT NOT NULL,
+                        barbeiro_id INT NULL,
+                        profissional VARCHAR(100),
+                        servico VARCHAR(100),
+                        nota TINYINT NOT NULL,
+                        comentario VARCHAR(500),
+                        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        INDEX idx_avaliacoes_criado (criado_em)
+                    ) ENGINE=InnoDB;
+                """)
+                conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:
+        print("Aviso: não foi possível garantir a tabela avaliacoes:", e)
+
+
 def garantir_agendamento_sem_cadastro():
     """Permite agendar cliente sem cadastro: cliente_id aceita NULL e guarda o nome em cliente_nome."""
     try:
@@ -511,6 +538,7 @@ def garantir_tabela_comissoes_pagas():
 
 
 garantir_coluna_concluido_em()
+garantir_tabela_avaliacoes()
 garantir_agendamento_sem_cadastro()
 garantir_tabela_comissoes_pagas()
 garantir_coluna_ativo_barbeiros()
@@ -3950,10 +3978,141 @@ def meus_agendamentos():
                 (cliente_id, agora.strftime("%Y-%m-%d"), agora.strftime("%Y-%m-%d"), agora.strftime("%H:%M"))
             )
             agendamentos = cursor.fetchall()
+
+            # Atendimentos concluídos pelo admin que o cliente ainda não avaliou.
+            # Depois de avaliar, o atendimento deixa de aparecer aqui.
+            cursor.execute(
+                """
+                SELECT a.id, a.profissional, a.data, a.horario, a.servico
+                FROM agendamentos a
+                LEFT JOIN avaliacoes v ON v.agendamento_id = a.id
+                WHERE a.cliente_id = %s
+                  AND LOWER(a.status) IN ('concluido', 'finalizado')
+                  AND v.id IS NULL
+                ORDER BY a.data DESC, a.horario DESC
+                LIMIT 20
+                """,
+                (cliente_id,)
+            )
+            para_avaliar = cursor.fetchall()
+            for av in para_avaliar:
+                if hasattr(av["data"], "strftime"):
+                    av["data"] = av["data"].strftime("%d/%m/%Y")
+                av["horario"] = str(av["horario"])[:5]
     finally:
         conn.close()
 
-    return render_template("meus_agendamentos.html", agendamentos=agendamentos)
+    return render_template(
+        "meus_agendamentos.html",
+        agendamentos=agendamentos,
+        para_avaliar=para_avaliar,
+        aviso=session.pop("aval_aviso", None),
+        erro=session.pop("aval_erro", None),
+    )
+
+
+@app.route("/avaliar-agendamento/<int:id>", methods=["POST"])
+@rate_limit(20, 3600, "avaliar-web")
+def avaliar_agendamento(id):
+    if "cliente_id" not in session:
+        return redirect(url_for("login"))
+
+    cliente_id = session["cliente_id"]
+    try:
+        nota = int(request.form.get("nota", ""))
+    except (TypeError, ValueError):
+        nota = 0
+    comentario = (request.form.get("comentario") or "").strip()[:500]
+
+    if nota < 1 or nota > 5:
+        session["aval_erro"] = "Escolha de 1 a 5 estrelas para avaliar."
+        return redirect(url_for("meus_agendamentos"))
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT id, barbeiro_id, profissional, servico, status FROM agendamentos "
+                "WHERE id = %s AND cliente_id = %s",
+                (id, cliente_id),
+            )
+            ag = cursor.fetchone()
+            if not ag:
+                session["aval_erro"] = "Agendamento não encontrado."
+            elif str(ag["status"] or "").lower() not in ("concluido", "finalizado"):
+                session["aval_erro"] = "Você só pode avaliar um atendimento já concluído."
+            else:
+                try:
+                    cursor.execute(
+                        "INSERT INTO avaliacoes (agendamento_id, cliente_id, barbeiro_id, profissional, servico, nota, comentario) "
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                        (id, cliente_id, ag["barbeiro_id"], ag["profissional"], ag["servico"], nota, comentario or None),
+                    )
+                    conn.commit()
+                    session["aval_aviso"] = "Obrigado pela sua avaliação!"
+                except pymysql.err.IntegrityError:
+                    conn.rollback()
+                    session["aval_erro"] = "Este atendimento já foi avaliado."
+    except Exception as e:
+        conn.rollback()
+        app.logger.error("Erro em avaliar_agendamento: %s", e)
+        session["aval_erro"] = "Não foi possível salvar a avaliação. Tente novamente."
+    finally:
+        conn.close()
+
+    return redirect(url_for("meus_agendamentos"))
+
+
+@app.route("/api/avaliacoes", methods=["GET"])
+def api_avaliacoes():
+    """Histórico público das últimas avaliações (mostra só o primeiro nome + inicial do sobrenome)."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) AS total, AVG(nota) AS media FROM avaliacoes")
+            resumo = cursor.fetchone() or {}
+            cursor.execute(
+                """
+                SELECT v.nota, v.comentario, v.profissional, v.servico, v.criado_em, u.nome
+                FROM avaliacoes v
+                LEFT JOIN usuarios u ON u.id = v.cliente_id
+                ORDER BY v.criado_em DESC
+                LIMIT 12
+                """
+            )
+            linhas = cursor.fetchall()
+
+        avaliacoes = []
+        for r in linhas:
+            partes = (r.get("nome") or "").split()
+            if not partes:
+                nome = "Cliente"
+            elif len(partes) == 1:
+                nome = partes[0]
+            else:
+                nome = f"{partes[0]} {partes[-1][0]}."
+            criado = r.get("criado_em")
+            avaliacoes.append({
+                "nome": nome,
+                "nota": int(r["nota"]),
+                "comentario": r.get("comentario") or "",
+                "profissional": r.get("profissional") or "",
+                "servico": r.get("servico") or "",
+                "data": criado.strftime("%d/%m/%Y") if hasattr(criado, "strftime") else "",
+            })
+
+        media = float(resumo.get("media") or 0)
+        return jsonify({
+            "sucesso": True,
+            "total": int(resumo.get("total") or 0),
+            "media": round(media, 1),
+            "avaliacoes": avaliacoes,
+        }), 200
+    except Exception as e:
+        app.logger.error("Erro em api_avaliacoes: %s", e)
+        return jsonify({"sucesso": False, "avaliacoes": [], "mensagem": "Erro interno."}), 500
+    finally:
+        conn.close()
 
 
 @app.route('/api/cliente/agendamentos', methods=['GET'])

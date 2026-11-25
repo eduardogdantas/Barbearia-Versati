@@ -129,6 +129,88 @@
         }
         .btn-voltar:hover { border-color: var(--text); }
 
+
+        /* Avaliação do atendimento */
+        .secao-titulo {
+            font-family: 'Anton', sans-serif;
+            font-size: 1.3rem;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            text-align: left;
+            margin: 10px 0 14px;
+        }
+        .msg { padding: 10px 12px; border-radius: 8px; margin-bottom: 16px; font-size: 0.9rem; text-align: left; }
+        .msg.erro { background: #3a0f14; color: #ff8c98; }
+        .msg.aviso { background: #10301a; color: #8be0a4; }
+        .avaliacao-card {
+            background: var(--bg-card);
+            border: 1px solid var(--brass);
+            border-radius: 12px;
+            padding: 20px 24px;
+            margin-bottom: 16px;
+            text-align: left;
+        }
+        .avaliacao-card h3 {
+            font-family: 'Anton', sans-serif;
+            font-size: 1.2rem;
+            letter-spacing: 0.02em;
+            margin-bottom: 4px;
+        }
+        .avaliacao-card .meta { color: var(--text-dim); font-size: 0.9rem; margin-bottom: 14px; }
+        .estrelas {
+            display: inline-flex;
+            flex-direction: row-reverse;
+            justify-content: flex-end;
+            gap: 4px;
+            margin-bottom: 12px;
+        }
+        .estrelas input {
+            position: absolute;
+            opacity: 0;
+            width: 1px;
+            height: 1px;
+        }
+        .estrelas label {
+            font-size: 2rem;
+            line-height: 1;
+            color: var(--stroke);
+            cursor: pointer;
+            transition: color 0.15s;
+        }
+        .estrelas label:hover,
+        .estrelas label:hover ~ label,
+        .estrelas input:checked ~ label { color: #f5b301; }
+        .estrelas input:focus-visible + label { outline: 2px solid var(--brass); border-radius: 4px; }
+        .avaliacao-card textarea {
+            width: 100%;
+            min-height: 80px;
+            resize: vertical;
+            padding: 12px 14px;
+            background: var(--bg);
+            border: 1px solid var(--stroke);
+            border-radius: 8px;
+            color: var(--text);
+            font-family: 'Work Sans', sans-serif;
+            font-size: 0.95rem;
+            outline: none;
+            margin-bottom: 12px;
+        }
+        .avaliacao-card textarea:focus { border-color: var(--brass); }
+        .btn-avaliar {
+            width: 100%;
+            padding: 12px;
+            background: var(--brass);
+            border: none;
+            color: #fff;
+            border-radius: 8px;
+            cursor: pointer;
+            font-family: 'Anton', sans-serif;
+            font-size: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+        .btn-avaliar:hover { filter: brightness(1.1); }
+
         /* Estilo do Modal Customizado */
         .modal-overlay {
             display: none;
@@ -200,7 +282,32 @@
         <h1>Meus Agendamentos</h1>
         <p class="subtitle">Acompanhe ou cancele seus horários marcados na Barbearia Versati.</p>
 
+        {% if erro %}<div class="msg erro">{{ erro }}</div>{% endif %}
+        {% if aviso %}<div class="msg aviso">{{ aviso }}</div>{% endif %}
+
+        {% if para_avaliar %}
+            <h2 class="secao-titulo">Avalie seu atendimento</h2>
+            {% for av in para_avaliar %}
+                <div class="avaliacao-card">
+                    <h3>{{ av.servico }}</h3>
+                    <p class="meta">com {{ av.profissional }} · {{ av.data }} às {{ av.horario }}</p>
+                    <form method="POST" action="/avaliar-agendamento/{{ av.id }}">
+                        <div class="estrelas" role="radiogroup" aria-label="Nota de 1 a 5">
+                            <input type="radio" id="nota{{ av.id }}-5" name="nota" value="5" required><label for="nota{{ av.id }}-5" title="5 estrelas">★</label>
+                            <input type="radio" id="nota{{ av.id }}-4" name="nota" value="4"><label for="nota{{ av.id }}-4" title="4 estrelas">★</label>
+                            <input type="radio" id="nota{{ av.id }}-3" name="nota" value="3"><label for="nota{{ av.id }}-3" title="3 estrelas">★</label>
+                            <input type="radio" id="nota{{ av.id }}-2" name="nota" value="2"><label for="nota{{ av.id }}-2" title="2 estrelas">★</label>
+                            <input type="radio" id="nota{{ av.id }}-1" name="nota" value="1"><label for="nota{{ av.id }}-1" title="1 estrela">★</label>
+                        </div>
+                        <textarea name="comentario" maxlength="500" placeholder="Conte como foi o atendimento (opcional)"></textarea>
+                        <button type="submit" class="btn-avaliar">Enviar avaliação</button>
+                    </form>
+                </div>
+            {% endfor %}
+        {% endif %}
+
         {% if agendamentos %}
+            {% if para_avaliar %}<h2 class="secao-titulo">Próximos horários</h2>{% endif %}
             {% for ag in agendamentos %}
                 <div class="agendamento-card">
                     <div class="info-detalhe">
@@ -217,7 +324,7 @@
                     </div>
                 </div>
             {% endfor %}
-        {% else %}
+        {% elif not para_avaliar %}
             <div class="sem-agendamento">
                 Você ainda não possui nenhum agendamento realizado.
             </div>
