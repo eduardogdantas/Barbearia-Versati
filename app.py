@@ -945,6 +945,8 @@ def processar_pagamento_cartao():
     token_cartao = dados.get("token")
     email = str(dados.get("email") or "").strip()
     cpf = re.sub(r"\D", "", str(dados.get("cpf") or ""))
+    nome = str(dados.get("nome") or session.get("cliente_nome") or "Cliente").strip()[:60]
+    parcelas = parse_int(dados.get("installments", 1), 1, 12) or 1
 
     if not token_cartao or not email or not cpf:
         return jsonify({"sucesso": False, "mensagem": "Dados de pagamento incompletos. Informe o cartão, e-mail e CPF."}), 400
@@ -960,55 +962,66 @@ def processar_pagamento_cartao():
     nome_plano = plano["nome"]
     valor = float(plano["preco"])
 
-    preapproval_data = {
-        "payer_email": email,
-        "back_url": f"{PUBLIC_BASE_URL}/minha-assinatura",
-        "reason": f"Assinatura {nome_plano} - Barbearia Versati",
+    payment_data = {
+        "transaction_amount": valor,
+        "token": token_cartao,
+        "description": f"Assinatura {nome_plano} - Barbearia Versati",
+        "installments": parcelas,
         "external_reference": str(cliente_id),
-        "auto_recurring": {
-            "frequency": 1,
-            "frequency_type": "months",
-            "transaction_amount": valor,
-            "currency_id": "BRL"
+        "payer": {
+            "email": email,
+            "first_name": nome,
+            "identification": {"type": "CPF", "number": cpf},
         },
-        "card_token_id": token_cartao,
-        "status": "authorized"
+        "metadata": {
+            "cliente_id": int(cliente_id),
+            "nome_plano": nome_plano,
+            "preco": valor,
+        },
     }
+    if PUBLIC_BASE_URL.startswith("https://"):
+        payment_data["notification_url"] = f"{PUBLIC_BASE_URL}/api/webhook"
 
     try:
-        preapproval_response = sdk.preapproval().create(preapproval_data)
-        http_status = preapproval_response.get("status")
-        response_data = preapproval_response.get("response", {}) or {}
-        status_sub = response_data.get("status")
+        payment_response = sdk.payment().create(payment_data)
+        http_status = payment_response.get("status")
+        payment = payment_response.get("response", {}) or {}
+        status_pgto = payment.get("status")
 
-        if http_status in [200, 201] and status_sub == "authorized":
-            subscription_id = response_data.get("id")
+        if http_status in [200, 201] and status_pgto == "approved":
+            payment_id = str(payment.get("id") or "")
             data_inicio = datetime.now().date()
             data_renovacao = data_inicio + timedelta(days=30)
 
             conn = get_db_connection()
             try:
                 with conn.cursor() as cursor:
+                    if payment_id:
+                        cursor.execute(
+                            "INSERT IGNORE INTO pagamentos_processados (pagamento_id, cliente_id) VALUES (%s, %s)",
+                            (payment_id, cliente_id),
+                        )
+
                     cursor.execute("SELECT id, gateway_subscription_id FROM assinaturas WHERE cliente_id = %s", (cliente_id,))
                     existente = cursor.fetchone()
 
                     if existente:
                         antigo = existente.get("gateway_subscription_id")
-                        if antigo and antigo != subscription_id:
-                            cancelar_no_gateway(antigo)  # evita cobrança dupla
+                        if antigo:
+                            cancelar_no_gateway(antigo)
                         cursor.execute("""
                             UPDATE assinaturas
                             SET nome_plano = %s, preco = %s, status = 'ativo',
                                 data_inicio = %s, data_renovacao = %s,
-                                gateway_subscription_id = %s
+                                gateway_subscription_id = NULL
                             WHERE cliente_id = %s
-                        """, (nome_plano, valor, data_inicio, data_renovacao, subscription_id, cliente_id))
+                        """, (nome_plano, valor, data_inicio, data_renovacao, cliente_id))
                     else:
                         cursor.execute("""
                             INSERT INTO assinaturas
                             (cliente_id, nome_plano, preco, status, data_inicio, data_renovacao, gateway_subscription_id)
-                            VALUES (%s, %s, %s, 'ativo', %s, %s, %s)
-                        """, (cliente_id, nome_plano, valor, data_inicio, data_renovacao, subscription_id))
+                            VALUES (%s, %s, %s, 'ativo', %s, %s, NULL)
+                        """, (cliente_id, nome_plano, valor, data_inicio, data_renovacao))
                     conn.commit()
             finally:
                 conn.close()
@@ -1016,25 +1029,26 @@ def processar_pagamento_cartao():
             return jsonify({
                 "sucesso": True,
                 "mensagem": "Assinatura contratada com sucesso!",
-                "subscription_id": subscription_id,
+                "pagamento_id": payment.get("id"),
                 "renovacao": data_renovacao.strftime("%d/%m/%Y")
             }), 200
 
         app.logger.warning(
-            "Cartão recusado (cliente %s) [HTTP %s]: %s",
+            "Cartão recusado (cliente %s) [HTTP %s]: status=%s detail=%s resp=%s",
             cliente_id,
             http_status,
-            response_data,
+            status_pgto,
+            payment.get("status_detail"),
+            payment,
         )
         return jsonify({
             "sucesso": False,
-            "mensagem": response_data.get("message") or "Pagamento recusado pela operadora do cartão."
+            "mensagem": "Pagamento recusado pela operadora do cartão."
         }), 400
 
     except Exception as e:
         app.logger.error("Erro em processar_pagamento_cartao: %s", e)
         return jsonify({"sucesso": False, "mensagem": "Erro interno. Tente novamente."}), 500
-
 
 @app.route('/api/admin/cancelar-assinatura', methods=['POST'])
 @admin_required

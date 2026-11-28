@@ -51,7 +51,7 @@
         }
         .plano-summary h3 { font-size: 1.1rem; color: #fff; }
         .plano-summary p { font-size: 1.2rem; font-weight: bold; color: var(--brass); margin-top: 4px; }
-        
+
         .metodos-pagamento {
             display: flex;
             gap: 12px;
@@ -98,7 +98,7 @@
             outline: none;
         }
         input:focus { border-color: var(--brass); }
-        
+
         .row-2 {
             display: flex;
             gap: 12px;
@@ -325,7 +325,7 @@
         <div id="pixArea" class="pix-area">
             <h3>Escaneie para Pagar</h3>
             <p>Abra o app do seu banco e leia o QR Code abaixo:</p>
-            
+
             <img id="qrCodeImg" class="qr-code-img" src="" alt="QR Code Pix">
 
             <div class="form-group">
@@ -457,15 +457,30 @@
             btn.innerText = "Processando...";
 
             const nomePlano = document.querySelector('.plano-summary h3').textContent.trim();
-            const validade = document.getElementById('cartaoValidade').value.split('/');
+            const nomeTitular = document.getElementById('cartaoNome').value.trim();
+            const validadeBruta = document.getElementById('cartaoValidade').value.trim();
+            const partesValidade = validadeBruta.split('/');
+
+            if (partesValidade.length !== 2 || partesValidade[0].length !== 2 || partesValidade[1].length !== 2) {
+                mostrarConfirmacaoAssinatura(
+                    "Informe a validade do cartão no formato MM/AA.",
+                    null,
+                    "Dados do Cartão",
+                    "alerta",
+                    "Entendi"
+                );
+                btn.disabled = false;
+                btn.innerText = "Confirmar e Assinar com Cartão";
+                return;
+            }
 
             try {
                 const token = await mp.createCardToken({
                     cardNumber: document.getElementById('cartaoNumero').value.replace(/\D/g, ''),
-                    cardholderName: document.getElementById('cartaoNome').value,
-                    cardExpirationMonth: validade[0],
-                    cardExpirationYear: '20' + validade[1],
-                    securityCode: document.getElementById('cartaoCvv').value,
+                    cardholderName: nomeTitular,
+                    cardExpirationMonth: partesValidade[0],
+                    cardExpirationYear: '20' + partesValidade[1],
+                    securityCode: document.getElementById('cartaoCvv').value.replace(/\D/g, ''),
                     identificationType: 'CPF',
                     identificationNumber: document.getElementById('cartaoCpf').value.replace(/\D/g, '')
                 });
@@ -475,10 +490,12 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         nome_plano: nomePlano,
+                        nome: nomeTitular,
                         token: token.id,
-                        email: document.getElementById('cartaoEmail').value,
+                        email: document.getElementById('cartaoEmail').value.trim(),
                         cpf: document.getElementById('cartaoCpf').value,
-                        telefone: document.getElementById('cartaoTelefone').value
+                        telefone: document.getElementById('cartaoTelefone').value,
+                        installments: 1
                     })
                 });
 
