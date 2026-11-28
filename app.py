@@ -56,8 +56,10 @@ ADMIN_PASSWORD_HASH = (os.environ.get("ADMIN_PASSWORD_HASH") or "").strip()
 ADMIN_TOKEN_DIAS = int(os.environ.get("ADMIN_TOKEN_DIAS", "30") or 30)
 MERCADO_PAGO_WEBHOOK_SECRET = os.environ.get("MERCADO_PAGO_WEBHOOK_SECRET")
 DEBUG_MODE = os.environ.get("FLASK_DEBUG", "False").lower() == "true"
-PUBLIC_BASE_URL = (os.environ.get("PUBLIC_BASE_URL") or "barbearia-versati-production.up.railway.app").rstrip("/")
-CORS_ORIGINS = [o.strip().rstrip("/") for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
+_base_url = (os.environ.get("PUBLIC_BASE_URL") or "barbearia-versati-production.up.railway.app").strip().rstrip("/")
+if _base_url and not _base_url.startswith(("http://", "https://")):
+    _base_url = f"https://{_base_url}"
+PUBLIC_BASE_URL = _base_url
 
 if not ADMIN_EMAIL or not ADMIN_PASSWORD_HASH:
     logging.warning("ADMIN_EMAIL / ADMIN_PASSWORD_HASH ausentes: ninguém consegue entrar nas rotas /api/admin.")

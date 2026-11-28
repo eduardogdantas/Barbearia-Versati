@@ -175,7 +175,7 @@
             font-weight: 600;
         }
 
-        /* Modal de Confirmação no Padrão do Site */
+        /* Modal de Confirmação / Aviso no Padrão do Site */
         .confirm-modal-overlay {
             display: none;
             position: fixed;
@@ -195,6 +195,12 @@
             width: 100%;
             padding: 28px 24px;
             text-align: center;
+        }
+        .confirm-modal-card.alerta {
+            border-color: var(--brass);
+        }
+        .confirm-modal-card.sucesso {
+            border-color: #22c55e;
         }
         .confirm-modal-card h2 {
             font-family: 'Anton', sans-serif;
@@ -223,6 +229,10 @@
             text-transform: uppercase;
             letter-spacing: 0.03em;
             cursor: pointer;
+            transition: filter 0.2s;
+        }
+        .confirm-modal-card.sucesso .confirm-modal-btn {
+            background: #16a34a;
         }
         .confirm-modal-btn:hover {
             filter: brightness(1.1);
@@ -332,9 +342,9 @@
         <a href="/planos" class="btn-cancelar">Voltar aos Planos</a>
     </div>
 
-    <!-- Modal de Confirmação -->
+    <!-- Modal de Confirmação / Aviso -->
     <div id="confirmacaoPagamentoModal" class="confirm-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="tituloConfirmacaoModal">
-        <div class="confirm-modal-card">
+        <div id="confirmacaoPagamentoCard" class="confirm-modal-card alerta">
             <h2 id="tituloConfirmacaoModal">Assinatura Confirmada</h2>
             <p id="textoConfirmacaoModal"></p>
             <button type="button" id="btnConfirmacaoModal" class="confirm-modal-btn">Continuar</button>
@@ -345,18 +355,32 @@
     <script>
         let intervalChecagemPix = null;
 
-        function mostrarConfirmacaoAssinatura(mensagem, redirecionarPara = "/minha-assinatura", titulo = "Assinatura Confirmada") {
+        function mostrarConfirmacaoAssinatura(
+            mensagem,
+            redirecionarPara = "/minha-assinatura",
+            titulo = "Assinatura Confirmada",
+            tipo = "sucesso",
+            textoBotao = "Continuar"
+        ) {
             const modal = document.getElementById("confirmacaoPagamentoModal");
+            const card = document.getElementById("confirmacaoPagamentoCard");
             const tituloEl = document.getElementById("tituloConfirmacaoModal");
             const textoEl = document.getElementById("textoConfirmacaoModal");
             const botaoEl = document.getElementById("btnConfirmacaoModal");
 
+            card.classList.remove("sucesso", "alerta");
+            card.classList.add(tipo === "alerta" ? "alerta" : "sucesso");
+
             tituloEl.textContent = titulo;
             textoEl.textContent = mensagem;
+            botaoEl.textContent = textoBotao;
             modal.style.display = "flex";
 
             botaoEl.onclick = () => {
-                window.location.href = redirecionarPara;
+                modal.style.display = "none";
+                if (redirecionarPara) {
+                    window.location.href = redirecionarPara;
+                }
             };
         }
 
@@ -463,15 +487,30 @@
                 if (response.ok && res.sucesso) {
                     mostrarConfirmacaoAssinatura(
                         `Assinatura realizada com sucesso!\nRenovação automática em: ${res.renovacao}`,
-                        "/minha-assinatura"
+                        "/minha-assinatura",
+                        "Assinatura Confirmada",
+                        "sucesso",
+                        "Continuar"
                     );
                 } else {
-                    alert(res.mensagem || "Erro ao processar pagamento com cartão.");
+                    mostrarConfirmacaoAssinatura(
+                        res.mensagem || "Erro ao processar pagamento com cartão.",
+                        null,
+                        "Pagamento Não Aprovado",
+                        "alerta",
+                        "Entendi"
+                    );
                     btn.disabled = false;
                     btn.innerText = "Confirmar e Assinar com Cartão";
                 }
             } catch (error) {
-                alert("Não foi possível validar o cartão. Confira os dados e tente novamente.");
+                mostrarConfirmacaoAssinatura(
+                    "Não foi possível validar o cartão. Confira os dados e tente novamente.",
+                    null,
+                    "Dados do Cartão",
+                    "alerta",
+                    "Entendi"
+                );
                 btn.disabled = false;
                 btn.innerText = "Confirmar e Assinar com Cartão";
             }
@@ -511,12 +550,24 @@
 
                     iniciarChecagemPix(res.pagamento_id);
                 } else {
-                    alert("Erro ao gerar Pix: " + (res.mensagem || "Verifique os dados."));
+                    mostrarConfirmacaoAssinatura(
+                        res.mensagem || "Verifique os dados informados para gerar o Pix.",
+                        null,
+                        "Erro ao Gerar Pix",
+                        "alerta",
+                        "Entendi"
+                    );
                     btn.disabled = false;
                     btn.innerText = "Gerar QR Code Pix";
                 }
             } catch (error) {
-                alert("Erro ao conectar com o servidor para gerar o Pix.");
+                mostrarConfirmacaoAssinatura(
+                    "Erro ao conectar com o servidor para gerar o Pix.",
+                    null,
+                    "Falha na Conexão",
+                    "alerta",
+                    "Entendi"
+                );
                 btn.disabled = false;
                 btn.innerText = "Gerar QR Code Pix";
             }
@@ -541,7 +592,10 @@
 
                         mostrarConfirmacaoAssinatura(
                             "Pagamento Pix confirmado! Sua assinatura foi ativada.",
-                            "/minha-assinatura"
+                            "/minha-assinatura",
+                            "Assinatura Confirmada",
+                            "sucesso",
+                            "Continuar"
                         );
                     }
                 } catch (e) {
@@ -554,7 +608,13 @@
             const input = document.getElementById('pixCopiaCola');
             input.select();
             navigator.clipboard.writeText(input.value);
-            alert("Chave Pix copiada!");
+            mostrarConfirmacaoAssinatura(
+                "Chave Pix copiada para a área de transferência!",
+                null,
+                "Copiado",
+                "sucesso",
+                "OK"
+            );
         }
     </script>
 </body>
