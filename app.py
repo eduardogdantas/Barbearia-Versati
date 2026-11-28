@@ -1200,8 +1200,8 @@ def pagina_minha_assinatura():
                     a.nome_plano,
                     a.preco,
                     a.status,
-                    DATE_FORMAT(a.data_inicio, '%d/%m/%Y') AS data_inicio,
-                    DATE_FORMAT(a.data_renovacao, '%d/%m/%Y') AS validade
+                    DATE_FORMAT(a.data_inicio, '%%d/%%m/%%Y') AS data_inicio,
+                    DATE_FORMAT(a.data_renovacao, '%%d/%%m/%%Y') AS validade
                 FROM assinaturas a
                 WHERE a.cliente_id = %s
                 ORDER BY a.id DESC
