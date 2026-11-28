@@ -977,10 +977,11 @@ def processar_pagamento_cartao():
 
     try:
         preapproval_response = sdk.preapproval().create(preapproval_data)
-        response_data = preapproval_response.get("response", {})
+        http_status = preapproval_response.get("status")
+        response_data = preapproval_response.get("response", {}) or {}
         status_sub = response_data.get("status")
 
-        if preapproval_response.get("status") in [200, 201] and status_sub == "authorized":
+        if http_status in [200, 201] and status_sub == "authorized":
             subscription_id = response_data.get("id")
             data_inicio = datetime.now().date()
             data_renovacao = data_inicio + timedelta(days=30)
@@ -1019,8 +1020,16 @@ def processar_pagamento_cartao():
                 "renovacao": data_renovacao.strftime("%d/%m/%Y")
             }), 200
 
-        app.logger.warning("Cartão recusado (cliente %s): %s", cliente_id, response_data.get("status_detail") or response_data.get("message"))
-        return jsonify({"sucesso": False, "mensagem": "Pagamento recusado pela operadora do cartão."}), 400
+        app.logger.warning(
+            "Cartão recusado (cliente %s) [HTTP %s]: %s",
+            cliente_id,
+            http_status,
+            response_data,
+        )
+        return jsonify({
+            "sucesso": False,
+            "mensagem": response_data.get("message") or "Pagamento recusado pela operadora do cartão."
+        }), 400
 
     except Exception as e:
         app.logger.error("Erro em processar_pagamento_cartao: %s", e)
