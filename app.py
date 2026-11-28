@@ -40,8 +40,15 @@ except ImportError:  # sem a biblioteca, "ver senha" fica desligado
     Fernet = None
     InvalidToken = Exception
 
+MP_PUBLIC_KEY = os.environ.get("MP_PUBLIC_KEY", "").strip()
+
 sdk = mercadopago.SDK(os.environ.get("MERCADO_PAGO_ACCESS_TOKEN"))
-MERCADO_PAGO_PUBLIC_KEY = os.environ.get("MERCADO_PAGO_PUBLIC_KEY", "")
+MERCADO_PAGO_PUBLIC_KEY = (
+    os.environ.get("MERCADO_PAGO_PUBLIC_KEY")
+    or os.environ.get("MP_PUBLIC_KEY")
+    or os.environ.get("MERCADOPAGO_PUBLIC_KEY")
+    or ""
+).strip()
 
 # Login do administrador: e-mail + HASH da senha (nunca a senha) ficam nas variáveis de ambiente.
 ADMIN_EMAIL = (os.environ.get("ADMIN_EMAIL") or "").strip().lower()

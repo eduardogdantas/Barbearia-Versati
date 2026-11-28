@@ -174,6 +174,59 @@
             color: #ffb703;
             font-weight: 600;
         }
+
+        /* Modal de Confirmação no Padrão do Site */
+        .confirm-modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(6px);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .confirm-modal-card {
+            background: var(--bg-card);
+            border: 1px solid var(--brass);
+            border-radius: 12px;
+            max-width: 420px;
+            width: 100%;
+            padding: 28px 24px;
+            text-align: center;
+        }
+        .confirm-modal-card h2 {
+            font-family: 'Anton', sans-serif;
+            font-size: 1.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            color: var(--text);
+            margin-bottom: 10px;
+        }
+        .confirm-modal-card p {
+            color: var(--text-dim);
+            font-size: 0.95rem;
+            line-height: 1.5;
+            margin-bottom: 22px;
+            white-space: pre-line;
+        }
+        .confirm-modal-btn {
+            width: 100%;
+            background: var(--brass);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 13px;
+            font-family: 'Anton', sans-serif;
+            font-size: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            cursor: pointer;
+        }
+        .confirm-modal-btn:hover {
+            filter: brightness(1.1);
+        }
     </style>
 </head>
 <body>
@@ -279,9 +332,33 @@
         <a href="/planos" class="btn-cancelar">Voltar aos Planos</a>
     </div>
 
+    <!-- Modal de Confirmação -->
+    <div id="confirmacaoPagamentoModal" class="confirm-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="tituloConfirmacaoModal">
+        <div class="confirm-modal-card">
+            <h2 id="tituloConfirmacaoModal">Assinatura Confirmada</h2>
+            <p id="textoConfirmacaoModal"></p>
+            <button type="button" id="btnConfirmacaoModal" class="confirm-modal-btn">Continuar</button>
+        </div>
+    </div>
+
     <script src="https://sdk.mercadopago.com/js/v2"></script>
     <script>
         let intervalChecagemPix = null;
+
+        function mostrarConfirmacaoAssinatura(mensagem, redirecionarPara = "/minha-assinatura", titulo = "Assinatura Confirmada") {
+            const modal = document.getElementById("confirmacaoPagamentoModal");
+            const tituloEl = document.getElementById("tituloConfirmacaoModal");
+            const textoEl = document.getElementById("textoConfirmacaoModal");
+            const botaoEl = document.getElementById("btnConfirmacaoModal");
+
+            tituloEl.textContent = titulo;
+            textoEl.textContent = mensagem;
+            modal.style.display = "flex";
+
+            botaoEl.onclick = () => {
+                window.location.href = redirecionarPara;
+            };
+        }
 
         function alternarMetodo(metodo) {
             const formCartao = document.getElementById('formCartao');
@@ -384,8 +461,10 @@
                 const res = await response.json();
 
                 if (response.ok && res.sucesso) {
-                    alert(`Assinatura realizada com sucesso!\nRenovação automática em: ${res.renovacao}`);
-                    window.location.href = "/minha-assinatura";
+                    mostrarConfirmacaoAssinatura(
+                        `Assinatura realizada com sucesso!\nRenovação automática em: ${res.renovacao}`,
+                        "/minha-assinatura"
+                    );
                 } else {
                     alert(res.mensagem || "Erro ao processar pagamento com cartão.");
                     btn.disabled = false;
@@ -460,8 +539,10 @@
                             body: JSON.stringify({ pagamento_id: pagamentoId })
                         });
 
-                        alert("Pagamento Pix confirmado! Sua assinatura foi ativada.");
-                        window.location.href = "/minha-assinatura";
+                        mostrarConfirmacaoAssinatura(
+                            "Pagamento Pix confirmado! Sua assinatura foi ativada.",
+                            "/minha-assinatura"
+                        );
                     }
                 } catch (e) {
                     console.error("Erro ao verificar status do Pix:", e);
