@@ -579,6 +579,11 @@ app.config.update(
     MAX_CONTENT_LENGTH=6 * 1024 * 1024,
 )
 # O app Flutter não usa CORS. Só habilite se o site/painel web ficar em OUTRO domínio.
+CORS_ORIGINS = [
+    o.strip().rstrip("/")
+    for o in os.environ.get("CORS_ORIGINS", "").split(",")
+    if o.strip()
+]
 if CORS_ORIGINS:
     CORS(
         app,
