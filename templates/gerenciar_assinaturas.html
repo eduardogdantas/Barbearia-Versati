@@ -116,7 +116,7 @@
         }
         .versati-cartoes-box .btn-meus-cartoes:hover {
             background: #262626;
-            border-color: #e5243b;
+            border-color: var(--brand-red);
         }
         .versati-cartoes-box .cartao-salvo-item {
             display: flex;
@@ -136,7 +136,7 @@
             font-weight: 700;
             font-size: 13px;
             text-transform: uppercase;
-            color: #e5243b;
+            color: var(--brand-red);
         }
         .versati-cartoes-box .cartao-salvo-numero {
             font-size: 15px;
@@ -153,14 +153,15 @@
             color: #ff6b7a;
             border: 1px solid rgba(255, 107, 122, 0.35);
             border-radius: 7px;
-            padding: 6px 10px;
+            padding: 6px 12px;
             font-size: 12px;
             font-weight: 600;
             cursor: pointer;
+            transition: background 0.2s, border-color 0.2s;
         }
         .versati-cartoes-box .btn-remover-cartao:hover:not(:disabled) {
-            background: rgba(229, 36, 59, 0.16);
-            border-color: #e5243b;
+            background: rgba(216, 31, 44, 0.16);
+            border-color: var(--brand-red);
         }
         .versati-cartoes-box .btn-remover-cartao:disabled {
             opacity: 0.5;
@@ -175,8 +176,8 @@
         }
         .versati-cartoes-box .cartoes-feedback.erro {
             display: block;
-            background: rgba(229, 36, 59, 0.15);
-            border: 1px solid rgba(229, 36, 59, 0.4);
+            background: rgba(216, 31, 44, 0.15);
+            border: 1px solid rgba(216, 31, 44, 0.4);
             color: #ff8a96;
         }
         .versati-cartoes-box .cartoes-feedback.ok {
@@ -191,11 +192,14 @@
             color: #b0b0b0;
             font-size: 14px;
         }
+
+        /* Modais estilizados no padrão Barbearia Versati */
         .versati-cartoes-box .modal-cartoes-backdrop {
             display: none;
             position: fixed;
             inset: 0;
-            background: rgba(0, 0, 0, 0.78);
+            background: rgba(0, 0, 0, 0.82);
+            backdrop-filter: blur(6px);
             z-index: 9999;
             align-items: center;
             justify-content: center;
@@ -207,12 +211,12 @@
         .versati-cartoes-box .modal-cartoes-box {
             width: 100%;
             max-width: 450px;
-            background: #141414;
-            color: #fff;
-            border: 1px solid #2a2a2a;
+            background: var(--bg-card);
+            color: var(--text);
+            border: 1px solid var(--stroke);
             border-radius: 14px;
             padding: 22px;
-            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.65);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.75);
             text-align: left;
         }
         .versati-cartoes-box .modal-cartoes-topo {
@@ -223,7 +227,10 @@
         }
         .versati-cartoes-box .modal-cartoes-topo h3 {
             margin: 0;
-            font-size: 18px;
+            font-family: 'Anton', sans-serif;
+            font-size: 1.25rem;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
         }
         .versati-cartoes-box .btn-fechar-cartoes {
             background: transparent;
@@ -237,8 +244,85 @@
             color: #fff;
         }
 
+        /* Confirmação própria do site para remover cartão */
+        .versati-cartoes-box .modal-confirmar-box {
+            max-width: 410px;
+            border-color: rgba(216, 31, 44, 0.45);
+        }
+        .versati-cartoes-box .confirmar-texto {
+            color: var(--text-dim);
+            font-size: 0.95rem;
+            line-height: 1.55;
+            margin-bottom: 12px;
+        }
+        .versati-cartoes-box .confirmar-cartao-resumo {
+            background: #1c1c1c;
+            border: 1px solid #2e2e2e;
+            border-radius: 10px;
+            padding: 12px 14px;
+            margin-bottom: 18px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+        }
+        .versati-cartoes-box .confirmar-cartao-resumo strong {
+            color: var(--brand-red);
+            font-size: 0.82rem;
+            text-transform: uppercase;
+        }
+        .versati-cartoes-box .confirmar-cartao-resumo span {
+            font-size: 0.95rem;
+            letter-spacing: 0.5px;
+            color: var(--text);
+        }
+        .versati-cartoes-box .confirmar-acoes {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+        .versati-cartoes-box .btn-cancelar-acao {
+            background: transparent;
+            color: var(--text);
+            border: 1px solid var(--stroke);
+            border-radius: 8px;
+            padding: 10px 16px;
+            font-family: 'Anton', sans-serif;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+        }
+        .versati-cartoes-box .btn-cancelar-acao:hover {
+            border-color: #fff;
+            background: rgba(255, 255, 255, 0.05);
+        }
+        .versati-cartoes-box .btn-confirmar-remocao {
+            background: var(--brand-red);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 18px;
+            font-family: 'Anton', sans-serif;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            cursor: pointer;
+            transition: filter 0.15s;
+        }
+        .versati-cartoes-box .btn-confirmar-remocao:hover:not(:disabled) {
+            filter: brightness(1.12);
+        }
+        .versati-cartoes-box .btn-confirmar-remocao:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+
         @media (max-width: 520px) {
             .sub-card { flex-direction: column; align-items: flex-start; }
+            .confirmar-acoes { flex-direction: column-reverse; }
+            .btn-cancelar-acao, .btn-confirmar-remocao { width: 100%; text-align: center; }
         }
     </style>
 </head>
@@ -301,6 +385,26 @@
                     </div>
                 </div>
             </div>
+
+            <div id="versatiModalConfirmarRemocao" class="modal-cartoes-backdrop" onclick="versatiFecharConfirmarRemocaoBackdrop(event)">
+                <div class="modal-cartoes-box modal-confirmar-box" role="dialog" aria-modal="true" aria-labelledby="versatiTituloConfirmarRemocao">
+                    <div class="modal-cartoes-topo">
+                        <h3 id="versatiTituloConfirmarRemocao">Remover Cartão</h3>
+                        <button type="button" class="btn-fechar-cartoes" onclick="versatiFecharConfirmarRemocao()" aria-label="Fechar">&times;</button>
+                    </div>
+                    <p class="confirmar-texto">Tem certeza de que deseja remover este cartão salvo da sua conta?</p>
+                    <div class="confirmar-cartao-resumo">
+                        <strong id="versatiResumoBandeira">CARTÃO</strong>
+                        <span id="versatiResumoNumero">&bull;&bull;&bull;&bull; &bull;&bull;&bull;&bull; &bull;&bull;&bull;&bull; ----</span>
+                    </div>
+                    <div class="confirmar-acoes">
+                        <button type="button" class="btn-cancelar-acao" onclick="versatiFecharConfirmarRemocao()">Cancelar</button>
+                        <button type="button" id="versatiBtnConfirmarRemocao" class="btn-confirmar-remocao" onclick="versatiConfirmarRemocaoCartao()">
+                            Sim, remover
+                        </button>
+                    </div>
+                </div>
+            </div>
         </section>
 
         <br>
@@ -309,6 +413,8 @@
 
     <script>
         (() => {
+            let _remocaoPendente = null;
+
             function _escaparHtml(texto) {
                 return String(texto ?? "")
                     .replace(/&/g, "&amp;")
@@ -344,8 +450,10 @@
                 lista.innerHTML = cartoes.map((c) => {
                     const mes = c.mes_expiracao ? String(c.mes_expiracao).padStart(2, "0") : "--";
                     const ano = c.ano_expiracao ? String(c.ano_expiracao).slice(-2) : "--";
-                    const bandeira = _escaparHtml(c.bandeira || "Cartão");
-                    const ultimos4 = _escaparHtml(c.ultimos_4 || "----");
+                    const bandeiraRaw = String(c.bandeira || "Cartão");
+                    const ultimos4Raw = String(c.ultimos_4 || "----");
+                    const bandeira = _escaparHtml(bandeiraRaw);
+                    const ultimos4 = _escaparHtml(ultimos4Raw);
                     const idCartao = Number(c.id);
 
                     return `
@@ -395,9 +503,44 @@
             }
 
             window.versatiRemoverMeuCartao = function (cartaoId, botao) {
-                if (!confirm("Deseja remover este cartão salvo?")) return;
+                const cardEl = botao ? botao.closest(".cartao-salvo-item") : document.getElementById(`versati-cartao-item-${cartaoId}`);
+                const bandeiraTexto = cardEl?.querySelector(".cartao-salvo-bandeira")?.textContent?.trim() || "Cartão";
+                const numeroTexto = cardEl?.querySelector(".cartao-salvo-numero")?.textContent?.trim() || "•••• •••• •••• ----";
+
+                _remocaoPendente = { cartaoId, botao };
+                document.getElementById("versatiResumoBandeira").textContent = bandeiraTexto;
+                document.getElementById("versatiResumoNumero").textContent = numeroTexto;
+
+                const btnConfirmar = document.getElementById("versatiBtnConfirmarRemocao");
+                if (btnConfirmar) {
+                    btnConfirmar.disabled = false;
+                    btnConfirmar.textContent = "Sim, remover";
+                }
+
+                document.getElementById("versatiModalConfirmarRemocao")?.classList.add("aberto");
+            };
+
+            window.versatiFecharConfirmarRemocao = function () {
+                document.getElementById("versatiModalConfirmarRemocao")?.classList.remove("aberto");
+                _remocaoPendente = null;
+            };
+
+            window.versatiFecharConfirmarRemocaoBackdrop = function (event) {
+                if (event.target.id === "versatiModalConfirmarRemocao") {
+                    window.versatiFecharConfirmarRemocao();
+                }
+            };
+
+            window.versatiConfirmarRemocaoCartao = function () {
+                if (!_remocaoPendente) return;
+                const { cartaoId, botao } = _remocaoPendente;
+                const btnConfirmar = document.getElementById("versatiBtnConfirmarRemocao");
 
                 if (botao) botao.disabled = true;
+                if (btnConfirmar) {
+                    btnConfirmar.disabled = true;
+                    btnConfirmar.textContent = "Removendo...";
+                }
                 _mostrarFeedbackCartoes("", "");
 
                 fetch(`/api/meus-cartoes/${cartaoId}`, {
@@ -413,10 +556,12 @@
                         return data;
                     })
                     .then((data) => {
-                        _mostrarFeedbackCartoes(data.mensagem || "Cartão removido.", "ok");
+                        window.versatiFecharConfirmarRemocao();
+                        _mostrarFeedbackCartoes(data.mensagem || "Cartão removido com sucesso!", "ok");
                         carregarMeusCartoes();
                     })
                     .catch((err) => {
+                        window.versatiFecharConfirmarRemocao();
                         if (botao) botao.disabled = false;
                         _mostrarFeedbackCartoes(err.message, "erro");
                     });
@@ -440,6 +585,7 @@
 
             document.addEventListener("keydown", (event) => {
                 if (event.key === "Escape") {
+                    window.versatiFecharConfirmarRemocao();
                     window.versatiFecharModalCartoes();
                 }
             });
