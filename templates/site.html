@@ -652,7 +652,7 @@
             <a href="#contato">Contato</a>
             {% if cliente_id %}
                 <a href="/meus-agendamentos" style="color: var(--brass); font-weight: 600;">Meus Agendamentos</a>
-                <a href="{{ url_for('pagina_meus_cartoes') }}">Meus Cartões</a>
+                <a href="/minha-assinatura#meus-cartoes">Meus Cartões</a>
             {% endif %}
             {% if admin %}
                 <a href="/admin/agendar" style="color: var(--brass); font-weight: 600;">Agendar Clientes</a>
@@ -686,7 +686,7 @@
             <a href="/planos" class="btn-hero-outline">Planos de Assinatura</a>
             <a href="https://wa.me/5583986429833" target="_blank" rel="noopener noreferrer" class="btn-hero-outline">Falar no WhatsApp</a>
             {% if cliente_id %}
-                <a href="{{ url_for('pagina_meus_cartoes') }}" class="btn-hero-outline">💳 Meus Cartões</a>
+                <a href="/minha-assinatura#meus-cartoes" class="btn-hero-outline">💳 Meus Cartões</a>
                 <button type="button" onclick="abrirModalAssinatura()" class="btn-hero-outline">Gerenciar Assinatura</button>
             {% endif %}
         </div>
@@ -998,6 +998,365 @@
             configurarMenuMobile();
             destacarDiaAtual();
         });
+    </script>
+</body>
+</html>
+```[cite: 18]
+
+---
+
+### 2. `gerenciar_assinaturas.html`
+
+```html
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minha Assinatura — Barbearia Versati</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #000000;
+            --bg-card: #141414;
+            --stroke: #2b2b2b;
+            --brand-red: #d81f2c;
+            --text: #f5f5f3;
+            --text-dim: #9a9a97;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Work Sans', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 20px;
+        }
+        .container { max-width: 800px; width: 100%; text-align: center; }
+        h1 { font-family: 'Anton', sans-serif; font-size: 2.5rem; text-transform: uppercase; margin-bottom: 8px; letter-spacing: 0.03em; }
+        p.subtitle { color: var(--text-dim); margin-bottom: 30px; }
+        .sub-card {
+            background: var(--bg-card);
+            border: 1px solid var(--stroke);
+            border-radius: 12px;
+            padding: 24px;
+            text-align: left;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+        .sub-card.ativo { border-color: rgba(34, 197, 94, 0.4); }
+        .sub-card.vencido { border-color: rgba(245, 158, 11, 0.4); }
+        .sub-card.cancelado { border-color: rgba(216, 31, 44, 0.4); }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            margin-top: 8px;
+            background: rgba(34, 197, 94, 0.15);
+            color: #22c55e;
+        }
+        .badge.vencido { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+        .badge.cancelado { background: rgba(216, 31, 44, 0.15); color: #d81f2c; }
+
+        .preco { font-family: 'Anton', sans-serif; font-size: 1.6rem; color: var(--brand-red); white-space: nowrap; }
+        .btn-voltar {
+            background: transparent;
+            color: var(--text);
+            border: 1px solid var(--stroke);
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-family: 'Anton', sans-serif;
+            text-decoration: none;
+            display: inline-block;
+            margin-top: 20px;
+        }
+        .btn-renovar {
+            border-color: var(--brand-red);
+            color: var(--brand-red);
+            margin-top: 12px;
+            padding: 8px 16px;
+        }
+
+        /* Seção Meus Cartões dentro de Gerenciar Assinaturas */
+        .cartoes-secao {
+            background: var(--bg-card);
+            border: 1px solid var(--stroke);
+            border-radius: 12px;
+            padding: 24px;
+            text-align: left;
+            margin-top: 24px;
+        }
+        .cartoes-topo {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .cartoes-topo h2 {
+            font-family: 'Anton', sans-serif;
+            font-size: 1.4rem;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+        .btn-atualizar-cartoes {
+            background: #1c1c1c;
+            color: var(--text);
+            border: 1px solid var(--stroke);
+            border-radius: 8px;
+            padding: 8px 14px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+        }
+        .btn-atualizar-cartoes:hover {
+            background: #262626;
+            border-color: var(--brand-red);
+        }
+        .cartao-salvo-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            background: #1e1e1e;
+            border: 1px solid #2e2e2e;
+            border-radius: 10px;
+            padding: 12px 14px;
+            margin-bottom: 10px;
+        }
+        .cartao-salvo-item:last-child { margin-bottom: 0; }
+        .cartao-salvo-bandeira {
+            font-weight: 700;
+            font-size: 0.82rem;
+            text-transform: uppercase;
+            color: var(--brand-red);
+        }
+        .cartao-salvo-numero {
+            font-size: 0.95rem;
+            letter-spacing: 1px;
+            margin-top: 2px;
+        }
+        .cartao-salvo-validade {
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            margin-top: 2px;
+        }
+        .btn-remover-cartao {
+            background: transparent;
+            color: #ff6b7a;
+            border: 1px solid rgba(255, 107, 122, 0.35);
+            border-radius: 7px;
+            padding: 6px 10px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .btn-remover-cartao:hover:not(:disabled) {
+            background: rgba(216, 31, 44, 0.16);
+            border-color: var(--brand-red);
+        }
+        .btn-remover-cartao:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .cartoes-feedback {
+            font-size: 0.85rem;
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 12px;
+            display: none;
+        }
+        .cartoes-feedback.erro {
+            display: block;
+            background: rgba(216, 31, 44, 0.15);
+            border: 1px solid rgba(216, 31, 44, 0.4);
+            color: #ff8a96;
+        }
+        .cartoes-feedback.ok {
+            display: block;
+            background: rgba(34, 197, 94, 0.14);
+            border: 1px solid rgba(34, 197, 94, 0.4);
+            color: #7ef2ad;
+        }
+        .cartoes-vazio {
+            text-align: center;
+            padding: 20px 10px;
+            color: var(--text-dim);
+            font-size: 0.9rem;
+        }
+
+        @media (max-width: 520px) {
+            .sub-card { flex-direction: column; align-items: flex-start; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Minha Assinatura</h1>
+        <p class="subtitle">Bem-vindo, {{ cliente_nome or 'Cliente' }}! Consulte o estado do seu plano e seus cartões.</p>
+
+        {% if assinaturas and assinaturas|length > 0 %}
+            {% for sub in assinaturas %}
+            {% set st = (sub.status or '')|lower %}
+            {% set classe = 'ativo' if st in ['ativo','active','authorized','approved','confirmado'] else ('vencido' if st in ['vencido','expired'] else 'cancelado') %}
+            <div class="sub-card {{ classe }}">
+                <div>
+                    <h3 style="font-family: 'Anton', sans-serif; font-size: 1.4rem;">{{ sub.nome_plano }}</h3>
+                    <p style="color: var(--text-dim); font-size: 0.95rem; margin-top: 4px;">Início: {{ sub.data_inicio }}</p>
+                    <p style="color: var(--text-dim); font-size: 0.95rem;">
+                        {% if classe == 'ativo' %}Próxima Renovação{% elif classe == 'vencido' %}Venceu em{% else %}Válida até{% endif %}:
+                        <strong style="color: #fff;">{{ sub.validade }}</strong>
+                    </p>
+                    <span class="badge {{ classe }}">{{ classe|upper }}</span>
+                    {% if classe == 'vencido' %}
+                    <div><a href="/planos" class="btn-voltar btn-renovar">Renovar plano</a></div>
+                    {% endif %}
+                </div>
+                <div>
+                    <div class="preco">R$ {{ "%.2f"|format(sub.preco)|replace('.', ',') }}/mês</div>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div style="background: var(--bg-card); padding: 40px; border-radius: 12px; border: 1px solid var(--stroke);">
+                <p style="color: var(--text-dim);">Não possui nenhuma assinatura ativa no momento.</p>
+                <a href="/planos" class="btn-voltar" style="border-color: var(--brand-red); color: var(--brand-red);">Contratar um Plano</a>
+            </div>
+        {% endif %}
+
+        <section class="cartoes-secao" id="meus-cartoes">
+            <div class="cartoes-topo">
+                <h2>Meus Cartões</h2>
+                <button type="button" class="btn-atualizar-cartoes" onclick="carregarCartoesAssinatura(true)">Atualizar</button>
+            </div>
+            <div id="feedbackCartoesAssinatura" class="cartoes-feedback" role="status" aria-live="polite"></div>
+            <div id="listaCartoesAssinatura">
+                <div class="cartoes-vazio">Carregando cartões...</div>
+            </div>
+        </section>
+
+        <br>
+        <a href="/" class="btn-voltar">Voltar ao Início</a>
+    </div>
+
+    <script>
+        function _escaparHtml(texto) {
+            return String(texto ?? "")
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#39;");
+        }
+
+        function _mostrarFeedbackCartoes(mensagem, tipo) {
+            const el = document.getElementById("feedbackCartoesAssinatura");
+            if (!el) return;
+            if (!mensagem) {
+                el.className = "cartoes-feedback";
+                el.textContent = "";
+                return;
+            }
+            el.className = `cartoes-feedback ${tipo}`;
+            el.textContent = mensagem;
+        }
+
+        function _renderizarCartoesAssinatura(cartoes) {
+            const lista = document.getElementById("listaCartoesAssinatura");
+            if (!lista) return;
+
+            if (!cartoes.length) {
+                lista.innerHTML = '<div class="cartoes-vazio">Você ainda não possui cartões salvos.</div>';
+                return;
+            }
+
+            lista.innerHTML = cartoes.map((c) => {
+                const mes = c.mes_expiracao ? String(c.mes_expiracao).padStart(2, "0") : "--";
+                const ano = c.ano_expiracao ? String(c.ano_expiracao).slice(-2) : "--";
+                const bandeira = _escaparHtml(c.bandeira || "Cartão");
+                const ultimos4 = _escaparHtml(c.ultimos_4 || "----");
+                const idCartao = Number(c.id);
+
+                return `
+                    <div class="cartao-salvo-item" id="cartao-item-${idCartao}">
+                        <div>
+                            <div class="cartao-salvo-bandeira">${bandeira}</div>
+                            <div class="cartao-salvo-numero">&bull;&bull;&bull;&bull; &bull;&bull;&bull;&bull; &bull;&bull;&bull;&bull; ${ultimos4}</div>
+                            <div class="cartao-salvo-validade">Validade: ${_escaparHtml(mes)}/${_escaparHtml(ano)}</div>
+                        </div>
+                        <button type="button" class="btn-remover-cartao" onclick="removerCartaoAssinatura(${idCartao}, this)">
+                            Remover
+                        </button>
+                    </div>
+                `;
+            }).join("");
+        }
+
+        function carregarCartoesAssinatura(mostrarCarregando = true) {
+            const lista = document.getElementById("listaCartoesAssinatura");
+            if (!lista) return;
+            if (mostrarCarregando) {
+                lista.innerHTML = '<div class="cartoes-vazio">Carregando cartões...</div>';
+            }
+
+            return fetch("/api/meus-cartoes", {
+                method: "GET",
+                credentials: "same-origin",
+                headers: { "X-Requested-With": "fetch" }
+            })
+                .then(async (res) => {
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok || !data.sucesso) {
+                        throw new Error(data.mensagem || "Não foi possível carregar seus cartões.");
+                    }
+                    return data.cartoes || [];
+                })
+                .then((cartoes) => _renderizarCartoesAssinatura(cartoes))
+                .catch((err) => {
+                    lista.innerHTML = `<div class="cartoes-vazio">${_escaparHtml(err.message)}</div>`;
+                });
+        }
+
+        function removerCartaoAssinatura(cartaoId, botao) {
+            if (!confirm("Deseja remover este cartão salvo?")) return;
+
+            if (botao) botao.disabled = true;
+            _mostrarFeedbackCartoes("", "");
+
+            fetch(`/api/meus-cartoes/${cartaoId}`, {
+                method: "DELETE",
+                credentials: "same-origin",
+                headers: { "X-Requested-With": "fetch" }
+            })
+                .then(async (res) => {
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok || !data.sucesso) {
+                        throw new Error(data.mensagem || "Não foi possível remover o cartão.");
+                    }
+                    return data;
+                })
+                .then((data) => {
+                    _mostrarFeedbackCartoes(data.mensagem || "Cartão removido.", "ok");
+                    carregarCartoesAssinatura(false);
+                })
+                .catch((err) => {
+                    if (botao) botao.disabled = false;
+                    _mostrarFeedbackCartoes(err.message, "erro");
+                });
+        }
+
+        document.addEventListener("DOMContentLoaded", () => carregarCartoesAssinatura(true));
     </script>
 </body>
 </html>

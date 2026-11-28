@@ -15,7 +15,7 @@
             --text: #f5f5f3;
             --text-dim: #9a9a97;
         }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             background: var(--bg);
             color: var(--text);
@@ -76,6 +76,167 @@
             margin-top: 12px;
             padding: 8px 16px;
         }
+
+        /* Bloco Meus Cartões dentro de Gerenciar Assinaturas */
+        .versati-cartoes-box {
+            background: var(--bg-card);
+            border: 1px solid var(--stroke);
+            border-radius: 12px;
+            padding: 24px;
+            text-align: left;
+            margin-top: 24px;
+        }
+        .versati-cartoes-box .cartoes-topo {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .versati-cartoes-box .cartoes-topo h2 {
+            font-family: 'Anton', sans-serif;
+            font-size: 1.4rem;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+        .versati-cartoes-box .btn-meus-cartoes {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: #1c1c1c;
+            color: #fff;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 10px 16px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s;
+        }
+        .versati-cartoes-box .btn-meus-cartoes:hover {
+            background: #262626;
+            border-color: #e5243b;
+        }
+        .versati-cartoes-box .cartao-salvo-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            background: #1e1e1e;
+            border: 1px solid #2e2e2e;
+            border-radius: 10px;
+            padding: 12px 14px;
+            margin-bottom: 10px;
+        }
+        .versati-cartoes-box .cartao-salvo-item:last-child {
+            margin-bottom: 0;
+        }
+        .versati-cartoes-box .cartao-salvo-bandeira {
+            font-weight: 700;
+            font-size: 13px;
+            text-transform: uppercase;
+            color: #e5243b;
+        }
+        .versati-cartoes-box .cartao-salvo-numero {
+            font-size: 15px;
+            letter-spacing: 1px;
+            margin-top: 2px;
+        }
+        .versati-cartoes-box .cartao-salvo-validade {
+            font-size: 12px;
+            color: #9e9e9e;
+            margin-top: 2px;
+        }
+        .versati-cartoes-box .btn-remover-cartao {
+            background: transparent;
+            color: #ff6b7a;
+            border: 1px solid rgba(255, 107, 122, 0.35);
+            border-radius: 7px;
+            padding: 6px 10px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .versati-cartoes-box .btn-remover-cartao:hover:not(:disabled) {
+            background: rgba(229, 36, 59, 0.16);
+            border-color: #e5243b;
+        }
+        .versati-cartoes-box .btn-remover-cartao:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .versati-cartoes-box .cartoes-feedback {
+            font-size: 13px;
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 12px;
+            display: none;
+        }
+        .versati-cartoes-box .cartoes-feedback.erro {
+            display: block;
+            background: rgba(229, 36, 59, 0.15);
+            border: 1px solid rgba(229, 36, 59, 0.4);
+            color: #ff8a96;
+        }
+        .versati-cartoes-box .cartoes-feedback.ok {
+            display: block;
+            background: rgba(46, 204, 113, 0.14);
+            border: 1px solid rgba(46, 204, 113, 0.4);
+            color: #7ef2ad;
+        }
+        .versati-cartoes-box .cartoes-vazio {
+            text-align: center;
+            padding: 22px 10px;
+            color: #b0b0b0;
+            font-size: 14px;
+        }
+        .versati-cartoes-box .modal-cartoes-backdrop {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.78);
+            z-index: 9999;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+        .versati-cartoes-box .modal-cartoes-backdrop.aberto {
+            display: flex;
+        }
+        .versati-cartoes-box .modal-cartoes-box {
+            width: 100%;
+            max-width: 450px;
+            background: #141414;
+            color: #fff;
+            border: 1px solid #2a2a2a;
+            border-radius: 14px;
+            padding: 22px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.65);
+            text-align: left;
+        }
+        .versati-cartoes-box .modal-cartoes-topo {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 14px;
+        }
+        .versati-cartoes-box .modal-cartoes-topo h3 {
+            margin: 0;
+            font-size: 18px;
+        }
+        .versati-cartoes-box .btn-fechar-cartoes {
+            background: transparent;
+            border: none;
+            color: #aaa;
+            font-size: 24px;
+            cursor: pointer;
+            line-height: 1;
+        }
+        .versati-cartoes-box .btn-fechar-cartoes:hover {
+            color: #fff;
+        }
+
         @media (max-width: 520px) {
             .sub-card { flex-direction: column; align-items: flex-start; }
         }
@@ -115,8 +276,176 @@
             </div>
         {% endif %}
 
+        <section class="versati-cartoes-box" id="meus-cartoes">
+            <div class="cartoes-topo">
+                <h2>Meus Cartões</h2>
+                <button type="button" class="btn-meus-cartoes" onclick="versatiAbrirModalCartoes()">
+                    Abrir em Modal
+                </button>
+            </div>
+
+            <div id="versatiFeedbackCartoesPagina" class="cartoes-feedback" role="status" aria-live="polite"></div>
+            <div id="versatiListaCartoesPagina">
+                <div class="cartoes-vazio">Carregando cartões...</div>
+            </div>
+
+            <div id="versatiModalMeusCartoes" class="modal-cartoes-backdrop" onclick="versatiFecharModalCartoesBackdrop(event)">
+                <div class="modal-cartoes-box" role="dialog" aria-modal="true" aria-labelledby="versatiTituloMeusCartoes">
+                    <div class="modal-cartoes-topo">
+                        <h3 id="versatiTituloMeusCartoes">Meus Cartões</h3>
+                        <button type="button" class="btn-fechar-cartoes" onclick="versatiFecharModalCartoes()" aria-label="Fechar">&times;</button>
+                    </div>
+                    <div id="versatiFeedbackMeusCartoes" class="cartoes-feedback" role="status" aria-live="polite"></div>
+                    <div id="versatiListaMeusCartoes">
+                        <div class="cartoes-vazio">Carregando cartões...</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <br>
         <a href="/" class="btn-voltar">Voltar ao Início</a>
     </div>
+
+    <script>
+        (() => {
+            function _escaparHtml(texto) {
+                return String(texto ?? "")
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;")
+                    .replace(/"/g, "&quot;")
+                    .replace(/'/g, "&#39;");
+            }
+
+            function _mostrarFeedbackCartoes(mensagem, tipo) {
+                ["versatiFeedbackCartoesPagina", "versatiFeedbackMeusCartoes"].forEach((id) => {
+                    const el = document.getElementById(id);
+                    if (!el) return;
+                    if (!mensagem) {
+                        el.className = "cartoes-feedback";
+                        el.textContent = "";
+                        return;
+                    }
+                    el.className = `cartoes-feedback ${tipo}`;
+                    el.textContent = mensagem;
+                });
+            }
+
+            function _renderizarListaCartoes(containerId, cartoes) {
+                const lista = document.getElementById(containerId);
+                if (!lista) return;
+
+                if (!cartoes.length) {
+                    lista.innerHTML = '<div class="cartoes-vazio">Você ainda não possui cartões salvos.</div>';
+                    return;
+                }
+
+                lista.innerHTML = cartoes.map((c) => {
+                    const mes = c.mes_expiracao ? String(c.mes_expiracao).padStart(2, "0") : "--";
+                    const ano = c.ano_expiracao ? String(c.ano_expiracao).slice(-2) : "--";
+                    const bandeira = _escaparHtml(c.bandeira || "Cartão");
+                    const ultimos4 = _escaparHtml(c.ultimos_4 || "----");
+                    const idCartao = Number(c.id);
+
+                    return `
+                        <div class="cartao-salvo-item" id="versati-cartao-item-${idCartao}">
+                            <div>
+                                <div class="cartao-salvo-bandeira">${bandeira}</div>
+                                <div class="cartao-salvo-numero">&bull;&bull;&bull;&bull; &bull;&bull;&bull;&bull; &bull;&bull;&bull;&bull; ${ultimos4}</div>
+                                <div class="cartao-salvo-validade">Validade: ${_escaparHtml(mes)}/${_escaparHtml(ano)}</div>
+                            </div>
+                            <button type="button" class="btn-remover-cartao" onclick="versatiRemoverMeuCartao(${idCartao}, this)">
+                                Remover
+                            </button>
+                        </div>
+                    `;
+                }).join("");
+            }
+
+            function carregarMeusCartoes() {
+                const destinos = ["versatiListaCartoesPagina", "versatiListaMeusCartoes"];
+                destinos.forEach((id) => {
+                    const el = document.getElementById(id);
+                    if (el) el.innerHTML = '<div class="cartoes-vazio">Carregando cartões...</div>';
+                });
+
+                fetch("/api/meus-cartoes", {
+                    method: "GET",
+                    credentials: "same-origin",
+                    headers: { "X-Requested-With": "fetch" }
+                })
+                    .then(async (res) => {
+                        const data = await res.json().catch(() => ({}));
+                        if (!res.ok || !data.sucesso) {
+                            throw new Error(data.mensagem || "Não foi possível carregar seus cartões.");
+                        }
+                        return data.cartoes || [];
+                    })
+                    .then((cartoes) => {
+                        destinos.forEach((id) => _renderizarListaCartoes(id, cartoes));
+                    })
+                    .catch((err) => {
+                        const msg = `<div class="cartoes-vazio">${_escaparHtml(err.message)}</div>`;
+                        destinos.forEach((id) => {
+                            const el = document.getElementById(id);
+                            if (el) el.innerHTML = msg;
+                        });
+                    });
+            }
+
+            window.versatiRemoverMeuCartao = function (cartaoId, botao) {
+                if (!confirm("Deseja remover este cartão salvo?")) return;
+
+                if (botao) botao.disabled = true;
+                _mostrarFeedbackCartoes("", "");
+
+                fetch(`/api/meus-cartoes/${cartaoId}`, {
+                    method: "DELETE",
+                    credentials: "same-origin",
+                    headers: { "X-Requested-With": "fetch" }
+                })
+                    .then(async (res) => {
+                        const data = await res.json().catch(() => ({}));
+                        if (!res.ok || !data.sucesso) {
+                            throw new Error(data.mensagem || "Não foi possível remover o cartão.");
+                        }
+                        return data;
+                    })
+                    .then((data) => {
+                        _mostrarFeedbackCartoes(data.mensagem || "Cartão removido.", "ok");
+                        carregarMeusCartoes();
+                    })
+                    .catch((err) => {
+                        if (botao) botao.disabled = false;
+                        _mostrarFeedbackCartoes(err.message, "erro");
+                    });
+            };
+
+            window.versatiAbrirModalCartoes = function () {
+                _mostrarFeedbackCartoes("", "");
+                document.getElementById("versatiModalMeusCartoes")?.classList.add("aberto");
+                carregarMeusCartoes();
+            };
+
+            window.versatiFecharModalCartoes = function () {
+                document.getElementById("versatiModalMeusCartoes")?.classList.remove("aberto");
+            };
+
+            window.versatiFecharModalCartoesBackdrop = function (event) {
+                if (event.target.id === "versatiModalMeusCartoes") {
+                    window.versatiFecharModalCartoes();
+                }
+            };
+
+            document.addEventListener("keydown", (event) => {
+                if (event.key === "Escape") {
+                    window.versatiFecharModalCartoes();
+                }
+            });
+
+            document.addEventListener("DOMContentLoaded", carregarMeusCartoes);
+        })();
+    </script>
 </body>
 </html>
