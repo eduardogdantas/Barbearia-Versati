@@ -3,1016 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Barbearia Versati</title>
-    <!-- Logo na aba do navegador (Favicon) -->
-    <link rel="icon" type="image/jpeg" href="{{ url_for('static', filename='img/logo_versati.jpeg') }}">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --bg: #000000;
-            --bg-card: #141414;
-            --bg-card-hover: #1a1a1a;
-            --stroke: #2a2a2a;
-            --stroke-hover: #d81f2c;
-            --text: #ffffff;
-            --text-dim: #b0b0ac;
-            --brass: #d81f2c;
-            --green: #2ec4b6;
-        }
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; scroll-behavior: smooth; }
-        body {
-            background: var(--bg);
-            color: var(--text);
-            font-family: 'Work Sans', sans-serif;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-
-        /* Menu Superior Centralizado */
-        header {
-            width: 100%;
-            display: grid;
-            grid-template-columns: 1fr auto 1fr;
-            align-items: center;
-            padding: 15px 40px;
-            border-bottom: 1px solid var(--stroke);
-            background: rgba(0, 0, 0, 0.95);
-            backdrop-filter: blur(10px);
-            position: sticky;
-            top: 0;
-            z-index: 1000;
-        }
-        .logo-nav {
-            grid-column: 1;
-            display: flex;
-            align-items: center;
-        }
-        .logo-nav img { height: 35px; width: auto; display: block; }
-        
-        .nav-links { 
-            grid-column: 2;
-            display: flex; 
-            gap: 20px; 
-            align-items: center; 
-            justify-content: center;
-            flex-wrap: nowrap;
-        }
-        .nav-links a {
-            color: var(--text-dim);
-            text-decoration: none;
-            font-size: 0.95rem;
-            font-weight: 500;
-            transition: color 0.2s;
-            white-space: nowrap;
-            display: flex;
-            align-items: center;
-            line-height: 1;
-        }
-        .nav-links a:hover { color: var(--text); }
-
-        .user-nav-area {
-            grid-column: 3;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            justify-content: flex-end;
-        }
-
-        .btn-nav-outline {
-            border: 1px solid var(--stroke) !important;
-            color: var(--text) !important;
-            padding: 8px 16px;
-            border-radius: 6px;
-            font-family: 'Anton', sans-serif;
-            font-size: 0.85rem;
-            text-transform: uppercase;
-            letter-spacing: 0.03em;
-            transition: border-color 0.2s;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            white-space: nowrap;
-            line-height: 1;
-        }
-        .btn-nav-outline:hover { border-color: var(--text) !important; }
-
-        .btn-user-badge {
-            background: transparent;
-            border: 1px solid var(--stroke);
-            color: var(--text);
-            padding: 8px 16px;
-            border-radius: 6px;
-            font-family: 'Anton', sans-serif;
-            font-size: 0.85rem;
-            text-transform: uppercase;
-            white-space: nowrap;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            line-height: 1;
-        }
-
-        /* Seção Principal (Hero) com Botões de Ação na Mesma Linha */
-        .hero {
-            width: 100%;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-            padding: 70px 20px 40px 20px;
-        }
-        .hero-logo { 
-            height: 95px; 
-            width: 95px; 
-            object-fit: cover; 
-            border-radius: 50%; 
-            border: 2px solid var(--brass);
-            margin-bottom: 20px; 
-        }
-        .hero h1 {
-            font-family: 'Anton', sans-serif;
-            font-size: 2.8rem;
-            letter-spacing: 0.05em;
-            text-transform: uppercase;
-            margin-bottom: 12px;
-        }
-        .hero p {
-            color: var(--text-dim);
-            font-size: 1.15rem;
-            margin-bottom: 30px;
-            font-weight: 400;
-        }
-        .hero-buttons {
-            display: flex;
-            gap: 12px;
-            justify-content: center;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-        .btn-hero-red {
-            background: var(--brass);
-            color: #fff;
-            border: none;
-            padding: 14px 24px;
-            border-radius: 8px;
-            font-family: 'Anton', sans-serif;
-            font-size: 1.05rem;
-            text-transform: uppercase;
-            cursor: pointer;
-            text-decoration: none;
-            letter-spacing: 0.03em;
-            transition: filter 0.15s;
-            display: inline-block;
-            text-align: center;
-        }
-        .btn-hero-red:hover { filter: brightness(1.1); }
-
-        .btn-hero-outline {
-            background: transparent;
-            border: 1px solid var(--stroke);
-            color: var(--text);
-            padding: 14px 24px;
-            border-radius: 8px;
-            font-family: 'Anton', sans-serif;
-            font-size: 1.05rem;
-            text-transform: uppercase;
-            cursor: pointer;
-            text-decoration: none;
-            letter-spacing: 0.03em;
-            transition: border-color 0.2s;
-            display: inline-block;
-            text-align: center;
-        }
-        .btn-hero-outline:hover { border-color: var(--text); }
-
-        /* Modal Pop-up para Assinatura */
-        .modal-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            background: rgba(0, 0, 0, 0.85);
-            backdrop-filter: blur(8px);
-            display: none;
-            justify-content: center;
-            align-items: center;
-            z-index: 2000;
-            padding: 20px;
-        }
-        .modal-container {
-            background: var(--bg-card);
-            border: 1px solid var(--stroke);
-            border-radius: 12px;
-            padding: 24px;
-            max-width: 550px;
-            width: 100%;
-            max-height: 90vh;
-            overflow-y: auto;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
-            position: relative;
-        }
-        .modal-close-btn {
-            position: absolute;
-            top: 15px;
-            right: 20px;
-            background: transparent;
-            border: none;
-            color: var(--text-dim);
-            font-size: 1.5rem;
-            cursor: pointer;
-            transition: color 0.2s;
-        }
-        .modal-close-btn:hover { color: var(--brass); }
-
-        /* Estilos dos Cards do Modal */
-        .card-assinatura-box {
-            background: var(--bg);
-            border: 1px solid var(--stroke);
-            border-radius: 10px;
-            padding: 20px;
-            width: 100%;
-            margin-bottom: 20px;
-        }
-        .card-assinatura-box:last-child {
-            margin-bottom: 0;
-        }
-        .card-header-ass {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid var(--stroke);
-            padding-bottom: 10px;
-            margin-bottom: 14px;
-        }
-        .card-header-ass h3 {
-            font-family: 'Anton', sans-serif;
-            color: #fff;
-            font-size: 1.2rem;
-            letter-spacing: 0.03em;
-            text-transform: uppercase;
-        }
-        .badge-status-ass {
-            background: var(--green);
-            color: #000;
-            font-size: 0.75rem;
-            font-weight: 700;
-            padding: 4px 10px;
-            border-radius: 20px;
-            text-transform: uppercase;
-        }
-        .valor-plano-ass {
-            font-size: 1.5rem;
-            font-weight: bold;
-            color: var(--brass);
-            font-family: 'Anton', sans-serif;
-            margin-bottom: 14px;
-        }
-        .datas-info-ass p {
-            font-size: 0.9rem;
-            color: var(--text-dim);
-            margin-bottom: 6px;
-            display: flex;
-            justify-content: space-between;
-        }
-        .datas-info-ass p strong { color: #fff; }
-        .destaque-data-ass { color: var(--green); font-weight: 600; }
-
-        /* Seção de Produtos */
-        .produtos-section {
-            width: 100%;
-            max-width: 1100px;
-            padding: 80px 20px;
-            text-align: center;
-            border-top: 1px solid var(--stroke);
-        }
-        .section-tag {
-            color: var(--brass);
-            font-family: 'Anton', sans-serif;
-            font-size: 1rem;
-            text-transform: uppercase;
-            letter-spacing: 0.15em;
-            margin-bottom: 8px;
-        }
-        .produtos-section h2, .sobre-section h2 {
-            font-family: 'Anton', sans-serif;
-            font-size: 2.8rem;
-            text-transform: uppercase;
-            margin-bottom: 12px;
-            letter-spacing: 0.03em;
-        }
-        .produtos-section > p {
-            color: var(--text-dim);
-            font-size: 1.1rem;
-            margin-bottom: 45px;
-        }
-        .produtos-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 280px));
-            gap: 24px;
-            justify-content: center;
-            width: 100%;
-            max-width: 1100px;
-            margin: 0 auto;
-        }
-        .produto-card {
-            background: var(--bg-card);
-            border: 1px solid var(--stroke);
-            border-radius: 12px;
-            padding: 30px 24px;
-            text-align: left;
-            transition: all 0.3s ease;
-        }
-        .produto-card:hover {
-            border-color: var(--stroke-hover);
-            transform: translateY(-4px);
-            background: var(--bg-card-hover);
-        }
-        .produto-card h3 {
-            font-family: 'Work Sans', sans-serif;
-            font-size: 1.2rem;
-            font-weight: 600;
-            margin-bottom: 10px;
-            color: var(--text);
-        }
-        .produto-card p {
-            color: var(--text-dim);
-            font-size: 0.95rem;
-            line-height: 1.6;
-            margin-bottom: 20px;
-        }
-        .produto-footer {
-            display: flex;
-            justify-content: flex-start;
-            align-items: center;
-            border-top: 1px solid var(--stroke);
-            padding-top: 16px;
-        }
-        .produto-preco {
-            font-size: 1.25rem;
-            color: var(--brass);
-            font-weight: 700;
-            font-family: 'Anton', sans-serif;
-            letter-spacing: 0.02em;
-        }
-
-        /* Seção de Avaliações */
-        .avaliacoes-section {
-            width: 100%;
-            max-width: 1100px;
-            padding: 80px 20px;
-            text-align: center;
-            border-top: 1px solid var(--stroke);
-        }
-        .avaliacoes-section h2 {
-            font-family: 'Anton', sans-serif;
-            font-size: 2.8rem;
-            text-transform: uppercase;
-            margin-bottom: 12px;
-            letter-spacing: 0.03em;
-        }
-        .avaliacoes-resumo {
-            color: var(--text-dim);
-            font-size: 1.1rem;
-            margin-bottom: 45px;
-        }
-        .avaliacoes-resumo .media { color: #f5b301; font-weight: 700; }
-        .avaliacoes-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 340px));
-            gap: 24px;
-            justify-content: center;
-            width: 100%;
-            max-width: 1100px;
-            margin: 0 auto;
-        }
-        .avaliacao-item {
-            background: var(--bg-card);
-            border: 1px solid var(--stroke);
-            border-radius: 12px;
-            padding: 24px;
-            text-align: left;
-        }
-        .avaliacao-item .estrelas-fixas { color: #f5b301; font-size: 1.2rem; letter-spacing: 2px; margin-bottom: 10px; }
-        .avaliacao-item .estrelas-fixas .vazia { color: var(--stroke); }
-        .avaliacao-item .comentario { color: var(--text); font-size: 0.95rem; line-height: 1.6; margin-bottom: 14px; }
-        .avaliacao-item .autor { font-weight: 600; font-size: 0.95rem; }
-        .avaliacao-item .detalhe { color: var(--text-dim); font-size: 0.85rem; margin-top: 2px; }
-
-        /* Seção Sobre */
-        .sobre-section {
-            width: 100%;
-            background: var(--bg-card);
-            border-top: 1px solid var(--stroke);
-            padding: 90px 20px;
-            text-align: center;
-        }
-        .sobre-container {
-            max-width: 1000px;
-            margin: 0 auto;
-            text-align: left;
-        }
-        .comodidades-tags {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            margin-top: 15px;
-            margin-bottom: 30px;
-        }
-        .tag {
-            background: var(--bg);
-            border: 1px solid var(--stroke);
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 0.9rem;
-            color: var(--text);
-        }
-        .sobre-card-info {
-            background: var(--bg);
-            border: 1px solid var(--stroke);
-            border-radius: 12px;
-            padding: 24px;
-            margin-bottom: 20px;
-        }
-        .sobre-card-info h4 {
-            font-family: 'Anton', sans-serif;
-            font-size: 1.1rem;
-            color: var(--text-dim);
-            margin-bottom: 10px;
-            text-transform: uppercase;
-            letter-spacing: 0.03em;
-        }
-        .sobre-card-info p {
-            color: var(--text);
-            font-size: 1.05rem;
-            line-height: 1.6;
-        }
-        .sobre-card-info a {
-            color: var(--text);
-            text-decoration: none;
-            transition: color 0.2s;
-        }
-        .sobre-card-info a:hover {
-            color: var(--brass);
-            text-decoration: underline;
-        }
-
-        /* Mapa da localização */
-        .mapa-localizacao {
-            margin-top: 16px;
-            border-radius: 12px;
-            overflow: hidden;
-            border: 1px solid var(--stroke);
-            background: var(--bg-card);
-        }
-        .mapa-localizacao iframe {
-            display: block;
-            width: 100%;
-            height: 320px;
-            border: 0;
-        }
-        .horarios-list {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            margin-top: 10px;
-        }
-        .horario-linha {
-            display: flex;
-            justify-content: space-between;
-            color: var(--text-dim);
-            font-size: 0.95rem;
-            padding-bottom: 6px;
-            border-bottom: 1px solid rgba(255,255,255,0.05);
-        }
-        .horario-linha.hoje {
-            color: var(--brass);
-            font-weight: 600;
-        }
-        .pagamentos-grid {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            margin-top: 12px;
-        }
-        .pag-badge {
-            background: var(--bg-card);
-            border: 1px solid var(--stroke);
-            padding: 6px 14px;
-            border-radius: 8px;
-            font-size: 0.9rem;
-            color: var(--text);
-        }
-
-        /* ==========================================================
-           BOTÃO HAMBÚRGUER
-           ========================================================== */
-        .btn-hamburguer {
-            display: none;
-            background: transparent;
-            border: 1px solid var(--stroke);
-            border-radius: 6px;
-            color: var(--text);
-            font-size: 1.4rem;
-            line-height: 1;
-            padding: 6px 12px;
-            cursor: pointer;
-        }
-
-        /* ==========================================================
-           RESPONSIVO — TABLET (até 900px)
-           ========================================================== */
-        @media (max-width: 900px) {
-            header { padding: 15px 20px; }
-            .nav-links { gap: 14px; }
-            .hero h1 { font-size: 2.2rem; }
-            .produtos-section h2, .sobre-section h2 { font-size: 2.2rem; }
-        }
-
-        /* ==========================================================
-           RESPONSIVO — CELULAR (até 768px)
-           ========================================================== */
-        @media (max-width: 768px) {
-            html, body { overflow-x: hidden; width: 100%; }
-            img { max-width: 100%; height: auto; }
-
-            header {
-                grid-template-columns: auto 1fr;
-                padding: 12px 16px;
-                gap: 10px;
-            }
-            .logo-nav { grid-column: 1; }
-            .btn-hamburguer {
-                display: block;
-                grid-column: 2;
-                justify-self: end;
-            }
-
-            .nav-links {
-                grid-column: 1 / -1;
-                grid-row: 2;
-                display: none;
-                flex-direction: column;
-                align-items: stretch;
-                gap: 0;
-                width: 100%;
-                padding-top: 10px;
-            }
-            .nav-links.aberto { display: flex; }
-            .nav-links a {
-                padding: 14px 4px;
-                border-bottom: 1px solid var(--stroke);
-                font-size: 1rem;
-            }
-
-            .user-nav-area {
-                grid-column: 1 / -1;
-                grid-row: 3;
-                display: none;
-                flex-direction: column;
-                align-items: stretch;
-                gap: 8px;
-                width: 100%;
-                padding-top: 10px;
-            }
-            .user-nav-area.aberto { display: flex; }
-            .btn-nav-outline, .btn-user-badge {
-                width: 100%;
-                padding: 12px 16px;
-                font-size: 0.95rem;
-            }
-
-            .hero { padding: 45px 18px 32px 18px; }
-            .hero-logo { height: 80px; width: 80px; }
-            .hero h1 {
-                font-size: 1.9rem;
-                line-height: 1.15;
-                overflow-wrap: break-word;
-            }
-            .hero p { font-size: 1rem; margin-bottom: 24px; }
-
-            .hero-buttons {
-                flex-direction: column;
-                width: 100%;
-                gap: 10px;
-            }
-            .btn-hero-red, .btn-hero-outline {
-                width: 100%;
-                padding: 15px 20px;
-                font-size: 1rem;
-            }
-
-            .produtos-section { padding: 55px 18px; }
-            .produtos-section h2, .sobre-section h2 { font-size: 1.8rem; }
-            .produtos-section > p { font-size: 1rem; margin-bottom: 30px; }
-            .section-tag { font-size: 0.85rem; }
-
-            .produtos-grid {
-                grid-template-columns: 1fr;
-                gap: 16px;
-            }
-            .produto-card { padding: 22px 18px; }
-
-            .sobre-section { padding: 55px 18px; }
-            .sobre-container { text-align: left; }
-            .tag, .pag-badge { font-size: 0.85rem; padding: 7px 12px; }
-            .mapa-localizacao iframe { height: 240px; }
-
-            .modal-overlay > * {
-                max-width: 100%;
-                width: 100%;
-            }
-        }
-
-        /* ==========================================================
-           RESPONSIVO — CELULAR PEQUENO (até 380px)
-           ========================================================== */
-        @media (max-width: 380px) {
-            .hero h1 { font-size: 1.6rem; }
-            .produtos-section h2, .sobre-section h2 { font-size: 1.55rem; }
-            .btn-hero-red, .btn-hero-outline { font-size: 0.95rem; padding: 14px 16px; }
-        }
-    </style>
-</head>
-<body>
-
-    <!-- Menu Superior com Links Centralizados -->
-    <header>
-        <div class="logo-nav">
-            <img src="{{ url_for('static', filename='img/logo_versati.jpeg') }}" alt="Barbearia Versati">
-        </div>
-        <button class="btn-hamburguer" id="btnMenu" aria-label="Abrir menu" aria-expanded="false">&#9776;</button>
-        <nav class="nav-links" id="navLinks">
-            <a href="#produtos">Produtos</a>
-            <a href="#sobre">Sobre</a>
-            <a href="#contato">Contato</a>
-            {% if cliente_id %}
-                <a href="/meus-agendamentos" style="color: var(--brass); font-weight: 600;">Meus Agendamentos</a>
-                <a href="/minha-assinatura#meus-cartoes">Meus Cartões</a>
-            {% endif %}
-            {% if admin %}
-                <a href="/admin/agendar" style="color: var(--brass); font-weight: 600;">Agendar Clientes</a>
-            {% endif %}
-        </nav>
-        <div class="user-nav-area" id="userNavArea">
-            {% if cliente_id %}
-                <span class="btn-user-badge">Olá, {{ cliente_nome }}</span>
-                <a href="/sair" class="btn-nav-outline" style="color: #d81f2c !important; border-color: #d81f2c !important; text-decoration: none;">Sair</a>
-            {% elif admin %}
-                <span class="btn-user-badge">Administrador</span>
-                <a href="/sair" class="btn-nav-outline" style="color: #d81f2c !important; border-color: #d81f2c !important; text-decoration: none;">Sair</a>
-            {% else %}
-                <a href="/login" class="btn-nav-outline" style="text-decoration: none;">Entrar</a>
-            {% endif %}
-        </div>
-    </header>
-
-    <!-- Seção Principal (Hero) -->
-    <section class="hero" id="topo-site">
-        <img class="hero-logo" src="{{ url_for('static', filename='img/logo_versati.jpeg') }}" alt="Barbearia Versati">
-        <h1>Barbearia Versati</h1>
-        <p>Corte, barba e cuidado de verdade — no seu tempo, do seu jeito.</p>
-        
-        <div class="hero-buttons">
-            {% if admin %}
-                <a href="/admin/agendar" class="btn-hero-red">Agendar Cliente</a>
-            {% else %}
-                <a href="/agendar" class="btn-hero-red">Agendar Horário</a>
-            {% endif %}
-            <a href="/planos" class="btn-hero-outline">Planos de Assinatura</a>
-            <a href="https://wa.me/5583986429833" target="_blank" rel="noopener noreferrer" class="btn-hero-outline">Falar no WhatsApp</a>
-            {% if cliente_id %}
-                <a href="/minha-assinatura#meus-cartoes" class="btn-hero-outline">💳 Meus Cartões</a>
-                <button type="button" onclick="abrirModalAssinatura()" class="btn-hero-outline">Gerenciar Assinatura</button>
-            {% endif %}
-        </div>
-    </section>
-
-    <!-- Modal Pop-Up de Gerenciamento da Assinatura -->
-    {% if cliente_id %}
-    <div id="modal-assinatura" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="titulo-modal-assinatura">
-        <div class="modal-container">
-            <button type="button" class="modal-close-btn" onclick="fecharModalAssinatura()" aria-label="Fechar">✕</button>
-
-            <div id="card-assinatura-container" class="card-assinatura-box" style="display: none;">
-                <div class="card-header-ass">
-                    <h3 id="titulo-modal-assinatura">Minha Assinatura</h3>
-                    <span class="badge-status-ass">Ativo</span>
-                </div>
-                <div style="font-size: 1.1rem; color: #fff; font-weight: 600; margin-bottom: 6px;" id="assinatura-nome-plano">Carregando plano...</div>
-                <div class="valor-plano-ass" id="assinatura-preco">R$ --,--</div>
-                <div class="datas-info-ass">
-                    <p><strong>Ativo desde:</strong> <span id="assinatura-inicio">--/--/----</span></p>
-                    <p><strong>Próxima Renovação:</strong> <span id="assinatura-renovacao" class="destaque-data-ass">--/--/----</span></p>
-                </div>
-            </div>
-
-            <div id="card-sem-assinatura" class="card-assinatura-box" style="display: none; text-align: center;">
-                <h3 style="font-family: 'Anton', sans-serif; font-size: 1.2rem; margin-bottom: 8px;">VOCÊ AINDA NÃO POSSUI UM PLANO</h3>
-                <p style="color: var(--text-dim); font-size: 0.9rem; margin-bottom: 16px;">Assine um plano mensal ilimitado para ter cortes à vontade com descontos exclusivos.</p>
-                <a href="/planos" class="btn-hero-red" style="font-size: 0.9rem; padding: 10px 20px; text-decoration: none;">Conhecer Nossos Planos</a>
-            </div>
-        </div>
-    </div>
-    {% endif %}
-
-    <!-- Seção de Produtos -->
-    <section class="produtos-section" id="produtos">
-        <div class="section-tag">Exclusivo</div>
-        <h2>Nossos Produtos</h2>
-        <p>Linha profissional de alta performance para cuidados com cabelo e barba em casa.</p>
-        
-        <div class="produtos-grid" id="produtos-grid-container">
-            <p style="color: var(--text-dim);">Carregando produtos...</p>
-        </div>
-    </section>
-
-    <!-- Seção de Avaliações dos Clientes -->
-    <section class="avaliacoes-section" id="avaliacoes">
-        <div class="section-tag">Depoimentos</div>
-        <h2>Avaliações dos Clientes</h2>
-        <p class="avaliacoes-resumo" id="avaliacoes-resumo">Carregando avaliações...</p>
-
-        <div class="avaliacoes-grid" id="avaliacoes-grid-container"></div>
-    </section>
-
-    <!-- Seção Sobre & Informações da Barbearia -->
-    <section class="sobre-section" id="sobre">
-        <div class="sobre-container">
-            <div class="section-tag">Informações</div>
-            <h2>Sobre a Barbearia</h2>
-
-            <!-- Comodidades -->
-            <div class="sobre-card-info" style="margin-top: 24px;">
-                <h4>Comodidades</h4>
-                <div class="comodidades-tags">
-                    <span class="tag">📶 Wi-Fi</span>
-                    <span class="tag">🚗 Estacionamento</span>
-                    <span class="tag">👶 Aceita crianças</span>
-                </div>
-            </div>
-
-            <!-- Localização -->
-            <div class="sobre-card-info">
-                <h4>Localização</h4>
-                <p>
-                    <a href="https://www.google.com/maps/search/?api=1&query=Rua+Creusa+Campos+de+Vasconcelos+102+Mangabeira+IV+Joao+Pessoa+PB" target="_blank" rel="noopener noreferrer" title="Abrir no Google Maps">
-                        📍 Rua Creusa Campos de Vasconcelos, 102 - Mangabeira IV, João Pessoa, PB ↗
-                    </a>
-                </p>
-
-                <div class="mapa-localizacao">
-                    <iframe
-                        src="https://www.google.com/maps?q=Rua+Creusa+Campos+de+Vasconcelos,+102,+Mangabeira+IV,+Jo%C3%A3o+Pessoa,+PB&output=embed"
-                        allowfullscreen
-                        loading="lazy"
-                        referrerpolicy="no-referrer-when-downgrade"
-                        title="Mapa da Barbearia Versati">
-                    </iframe>
-                </div>
-            </div>
-
-            <!-- Horários -->
-            <div class="sobre-card-info" id="contato">
-                <h4>Horário de Atendimento</h4>
-                <div class="horarios-list">
-                    <div class="horario-linha" data-dia="1"><span>Segunda-feira</span><span>09:00 – 19:00</span></div>
-                    <div class="horario-linha" data-dia="2"><span>Terça-feira</span><span>09:00 – 19:00</span></div>
-                    <div class="horario-linha" data-dia="3"><span>Quarta-feira</span><span>09:00 – 19:00</span></div>
-                    <div class="horario-linha" data-dia="4"><span>Quinta-feira</span><span>09:00 – 19:00</span></div>
-                    <div class="horario-linha" data-dia="5"><span>Sexta-feira</span><span>09:00 – 19:00</span></div>
-                    <div class="horario-linha" data-dia="6"><span>Sábado</span><span>09:00 – 19:00</span></div>
-                </div>
-            </div>
-
-            <!-- Pagamento -->
-            <div class="sobre-card-info">
-                <h4>Forma de Pagamento (Aceitos neste local)</h4>
-                <div class="pagamentos-grid">
-                    <span class="pag-badge">Pix</span>
-                    <span class="pag-badge">Cartão de Crédito</span>
-                    <span class="pag-badge">Crédito</span>
-                    <span class="pag-badge">Débito</span>
-                    <span class="pag-badge">Dinheiro</span>
-                    <span class="pag-badge">Pix e Cartão</span>
-                </div>
-            </div>
-
-            <!-- Contato -->
-            <div class="sobre-card-info">
-                <h4>Contato</h4>
-                <p>
-                    <a href="https://wa.me/5583986429833" target="_blank" rel="noopener noreferrer">
-                        💬 5583986429833 ↗
-                    </a>
-                </p>
-            </div>
-        </div>
-    </section>
-
-    <script>
-        function escHtml(v) {
-            return String(v === null || v === undefined ? '' : v)
-                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-        }
-
-        function abrirModalAssinatura() {
-            const modal = document.getElementById('modal-assinatura');
-            if (modal) {
-                modal.style.display = 'flex';
-                carregarMinhaAssinatura();
-            }
-        }
-
-        function fecharModalAssinatura() {
-            const modal = document.getElementById('modal-assinatura');
-            if (modal) {
-                modal.style.display = 'none';
-            }
-        }
-
-        window.addEventListener('click', function(event) {
-            const modal = document.getElementById('modal-assinatura');
-            if (event.target === modal) {
-                fecharModalAssinatura();
-            }
-        });
-
-        async function carregarMinhaAssinatura() {
-            try {
-                const response = await fetch('/api/minha-assinatura', {
-                    credentials: 'same-origin',
-                    headers: { 'X-Requested-With': 'fetch' }
-                });
-                const data = await response.json();
-
-                const boxAtivo = document.getElementById('card-assinatura-container');
-                const boxSemAssinatura = document.getElementById('card-sem-assinatura');
-
-                if (data.sucesso && data.tem_assinatura) {
-                    document.getElementById('assinatura-nome-plano').innerText = data.assinatura.plano;
-                    document.getElementById('assinatura-preco').innerText = `${data.assinatura.preco} / mês`;
-                    document.getElementById('assinatura-inicio').innerText = data.assinatura.inicio;
-                    document.getElementById('assinatura-renovacao').innerText = data.assinatura.renovacao;
-
-                    boxAtivo.style.display = 'block';
-                    boxSemAssinatura.style.display = 'none';
-                } else {
-                    boxAtivo.style.display = 'none';
-                    boxSemAssinatura.style.display = 'block';
-                }
-            } catch (error) {
-                console.error('Erro ao buscar plano ativo:', error);
-            }
-        }
-
-        async function carregarProdutosWeb() {
-            const container = document.getElementById('produtos-grid-container');
-            if (!container) return;
-
-            try {
-                const response = await fetch('/api/produtos');
-                const data = await response.json();
-
-                if (data.sucesso && data.produtos && data.produtos.length > 0) {
-                    container.innerHTML = '';
-                    data.produtos.forEach(prod => {
-                        const precoFormatado = Number(prod.preco).toLocaleString('pt-BR', {
-                            style: 'currency',
-                            currency: 'BRL'
-                        });
-
-                        const cardHtml = `
-                            <div class="produto-card">
-                                <div>
-                                    <h3>${escHtml(prod.nome)}</h3>
-                                    <p>${escHtml(prod.descricao || 'Cuidados profissionais para cabelo e barba.')}</p>
-                                </div>
-                                <div class="produto-footer">
-                                    <span class="produto-preco">${precoFormatado}</span>
-                                </div>
-                            </div>
-                        `;
-                        container.innerHTML += cardHtml;
-                    });
-                } else {
-                    container.innerHTML = '<p style="color: var(--text-dim);">Nenhum produto cadastrado no momento.</p>';
-                }
-            } catch (error) {
-                console.error("Erro ao carregar produtos:", error);
-                container.innerHTML = '<p style="color: var(--brass);">Erro ao carregar os produtos do servidor.</p>';
-            }
-        }
-
-        async function carregarAvaliacoesWeb() {
-            const secao = document.getElementById('avaliacoes');
-            const container = document.getElementById('avaliacoes-grid-container');
-            const resumo = document.getElementById('avaliacoes-resumo');
-            if (!container || !resumo) return;
-
-            try {
-                const response = await fetch('/api/avaliacoes');
-                const data = await response.json();
-
-                if (!data.sucesso || !data.avaliacoes || data.avaliacoes.length === 0) {
-                    resumo.textContent = 'Ainda não há avaliações. Seja o primeiro a avaliar após o seu atendimento!';
-                    return;
-                }
-
-                const plural = data.total === 1 ? 'avaliação' : 'avaliações';
-                resumo.innerHTML = `<span class="media">★ ${Number(data.media).toFixed(1).replace('.', ',')}</span> · ${data.total} ${plural}`;
-
-                container.innerHTML = data.avaliacoes.map(av => {
-                    const cheias = '★'.repeat(av.nota);
-                    const vazias = '★'.repeat(5 - av.nota);
-                    const detalhe = [av.servico, av.profissional ? 'com ' + av.profissional : '', av.data]
-                        .filter(Boolean).map(escHtml).join(' · ');
-                    return `
-                        <div class="avaliacao-item">
-                            <div class="estrelas-fixas">${cheias}<span class="vazia">${vazias}</span></div>
-                            ${av.comentario ? `<p class="comentario">“${escHtml(av.comentario)}”</p>` : ''}
-                            <div class="autor">${escHtml(av.nome)}</div>
-                            <div class="detalhe">${detalhe}</div>
-                        </div>`;
-                }).join('');
-            } catch (error) {
-                console.error("Erro ao carregar avaliações:", error);
-                if (secao) secao.style.display = 'none';
-            }
-        }
-
-        function configurarMenuMobile() {
-            const btnMenu = document.getElementById('btnMenu');
-            const navLinks = document.getElementById('navLinks');
-            const userNavArea = document.getElementById('userNavArea');
-            if (!btnMenu || !navLinks) return;
-
-            btnMenu.addEventListener('click', () => {
-                const vaiAbrir = !navLinks.classList.contains('aberto');
-                navLinks.classList.toggle('aberto', vaiAbrir);
-                if (userNavArea) userNavArea.classList.toggle('aberto', vaiAbrir);
-                btnMenu.setAttribute('aria-expanded', vaiAbrir ? 'true' : 'false');
-                btnMenu.innerHTML = vaiAbrir ? '&times;' : '&#9776;';
-            });
-
-            navLinks.querySelectorAll('a').forEach(link => {
-                link.addEventListener('click', () => {
-                    navLinks.classList.remove('aberto');
-                    if (userNavArea) userNavArea.classList.remove('aberto');
-                    btnMenu.setAttribute('aria-expanded', 'false');
-                    btnMenu.innerHTML = '&#9776;';
-                });
-            });
-
-            window.addEventListener('resize', () => {
-                if (window.innerWidth > 768) {
-                    navLinks.classList.remove('aberto');
-                    if (userNavArea) userNavArea.classList.remove('aberto');
-                    btnMenu.setAttribute('aria-expanded', 'false');
-                    btnMenu.innerHTML = '&#9776;';
-                }
-            });
-        }
-
-        function destacarDiaAtual() {
-            const dias = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-            const abrev = new Intl.DateTimeFormat("en-US", { weekday: "short", timeZone: "America/Fortaleza" }).format(new Date());
-            const hoje = dias[abrev];
-            document.querySelectorAll(".horario-linha[data-dia]").forEach(linha => {
-                if (Number(linha.dataset.dia) === hoje) {
-                    linha.classList.add("hoje");
-                    const nome = linha.querySelector("span");
-                    if (nome && !nome.textContent.includes("(Hoje)")) nome.textContent += " (Hoje)";
-                }
-            });
-        }
-
-        document.addEventListener("DOMContentLoaded", () => {
-            carregarProdutosWeb();
-            carregarAvaliacoesWeb();
-            configurarMenuMobile();
-            destacarDiaAtual();
-        });
-    </script>
-</body>
-</html>
-```[cite: 18]
-
----
-
-### 2. `gerenciar_assinaturas.html`
-
-```html
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Minha Assinatura — Barbearia Versati</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Anton&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -1025,7 +15,7 @@
             --text: #f5f5f3;
             --text-dim: #9a9a97;
         }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             background: var(--bg);
             color: var(--text);
@@ -1038,7 +28,17 @@
         }
         .container { max-width: 800px; width: 100%; text-align: center; }
         h1 { font-family: 'Anton', sans-serif; font-size: 2.5rem; text-transform: uppercase; margin-bottom: 8px; letter-spacing: 0.03em; }
-        p.subtitle { color: var(--text-dim); margin-bottom: 30px; }
+        p.subtitle { color: var(--text-dim); margin-bottom: 20px; }
+
+        .acoes-topo {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 28px;
+        }
+
         .sub-card {
             background: var(--bg-card);
             border: 1px solid var(--stroke);
@@ -1087,7 +87,26 @@
             padding: 8px 16px;
         }
 
-        /* Seção Meus Cartões dentro de Gerenciar Assinaturas */
+        /* Botões e Modal de Meus Cartões dentro de Gerenciar Assinaturas */
+        .btn-meus-cartoes {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: #1c1c1c;
+            color: #fff;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 10px 16px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s;
+        }
+        .btn-meus-cartoes:hover {
+            background: #262626;
+            border-color: #e5243b;
+        }
+
         .cartoes-secao {
             background: var(--bg-card);
             border: 1px solid var(--stroke);
@@ -1096,34 +115,67 @@
             text-align: left;
             margin-top: 24px;
         }
-        .cartoes-topo {
+        .cartoes-secao-topo {
             display: flex;
             align-items: center;
             justify-content: space-between;
+            flex-wrap: wrap;
             gap: 12px;
             margin-bottom: 16px;
         }
-        .cartoes-topo h2 {
+        .cartoes-secao-topo h2 {
             font-family: 'Anton', sans-serif;
             font-size: 1.4rem;
             text-transform: uppercase;
             letter-spacing: 0.03em;
         }
-        .btn-atualizar-cartoes {
-            background: #1c1c1c;
-            color: var(--text);
-            border: 1px solid var(--stroke);
-            border-radius: 8px;
-            padding: 8px 14px;
-            font-size: 0.85rem;
-            font-weight: 600;
+
+        .modal-cartoes-backdrop {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.78);
+            z-index: 9999;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+        .modal-cartoes-backdrop.aberto {
+            display: flex;
+        }
+        .modal-cartoes-box {
+            width: 100%;
+            max-width: 450px;
+            background: #141414;
+            color: #fff;
+            border: 1px solid #2a2a2a;
+            border-radius: 14px;
+            padding: 22px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.65);
+            text-align: left;
+        }
+        .modal-cartoes-topo {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 14px;
+        }
+        .modal-cartoes-topo h3 {
+            margin: 0;
+            font-size: 18px;
+        }
+        .btn-fechar-cartoes {
+            background: transparent;
+            border: none;
+            color: #aaa;
+            font-size: 24px;
             cursor: pointer;
-            transition: border-color 0.2s, background 0.2s;
+            line-height: 1;
         }
-        .btn-atualizar-cartoes:hover {
-            background: #262626;
-            border-color: var(--brand-red);
+        .btn-fechar-cartoes:hover {
+            color: #fff;
         }
+
         .cartao-salvo-item {
             display: flex;
             align-items: center;
@@ -1135,43 +187,47 @@
             padding: 12px 14px;
             margin-bottom: 10px;
         }
-        .cartao-salvo-item:last-child { margin-bottom: 0; }
+        .cartao-salvo-item:last-child {
+            margin-bottom: 0;
+        }
         .cartao-salvo-bandeira {
             font-weight: 700;
-            font-size: 0.82rem;
+            font-size: 13px;
             text-transform: uppercase;
-            color: var(--brand-red);
+            color: #e5243b;
         }
         .cartao-salvo-numero {
-            font-size: 0.95rem;
+            font-size: 15px;
             letter-spacing: 1px;
             margin-top: 2px;
         }
         .cartao-salvo-validade {
-            font-size: 0.8rem;
-            color: var(--text-dim);
+            font-size: 12px;
+            color: #9e9e9e;
             margin-top: 2px;
         }
+
         .btn-remover-cartao {
             background: transparent;
             color: #ff6b7a;
             border: 1px solid rgba(255, 107, 122, 0.35);
             border-radius: 7px;
             padding: 6px 10px;
-            font-size: 0.8rem;
+            font-size: 12px;
             font-weight: 600;
             cursor: pointer;
         }
         .btn-remover-cartao:hover:not(:disabled) {
-            background: rgba(216, 31, 44, 0.16);
-            border-color: var(--brand-red);
+            background: rgba(229, 36, 59, 0.16);
+            border-color: #e5243b;
         }
         .btn-remover-cartao:disabled {
             opacity: 0.5;
             cursor: not-allowed;
         }
+
         .cartoes-feedback {
-            font-size: 0.85rem;
+            font-size: 13px;
             border-radius: 8px;
             padding: 10px 12px;
             margin-bottom: 12px;
@@ -1179,21 +235,21 @@
         }
         .cartoes-feedback.erro {
             display: block;
-            background: rgba(216, 31, 44, 0.15);
-            border: 1px solid rgba(216, 31, 44, 0.4);
+            background: rgba(229, 36, 59, 0.15);
+            border: 1px solid rgba(229, 36, 59, 0.4);
             color: #ff8a96;
         }
         .cartoes-feedback.ok {
             display: block;
-            background: rgba(34, 197, 94, 0.14);
-            border: 1px solid rgba(34, 197, 94, 0.4);
+            background: rgba(46, 204, 113, 0.14);
+            border: 1px solid rgba(46, 204, 113, 0.4);
             color: #7ef2ad;
         }
         .cartoes-vazio {
             text-align: center;
-            padding: 20px 10px;
-            color: var(--text-dim);
-            font-size: 0.9rem;
+            padding: 22px 10px;
+            color: #b0b0b0;
+            font-size: 14px;
         }
 
         @media (max-width: 520px) {
@@ -1204,7 +260,16 @@
 <body>
     <div class="container">
         <h1>Minha Assinatura</h1>
-        <p class="subtitle">Bem-vindo, {{ cliente_nome or 'Cliente' }}! Consulte o estado do seu plano e seus cartões.</p>
+        <p class="subtitle">Bem-vindo, {{ cliente_nome or 'Cliente' }}! Consulte o estado do seu plano.</p>
+
+        <div class="acoes-topo">
+            <button type="button" class="btn-meus-cartoes" onclick="abrirModalCartoes()">
+                💳 Meus Cartões (Modal)
+            </button>
+            <a href="#meus-cartoes" class="btn-meus-cartoes" style="text-decoration: none;">
+                Meus Cartões
+            </a>
+        </div>
 
         {% if assinaturas and assinaturas|length > 0 %}
             {% for sub in assinaturas %}
@@ -1236,15 +301,30 @@
         {% endif %}
 
         <section class="cartoes-secao" id="meus-cartoes">
-            <div class="cartoes-topo">
+            <div class="cartoes-secao-topo">
                 <h2>Meus Cartões</h2>
-                <button type="button" class="btn-atualizar-cartoes" onclick="carregarCartoesAssinatura(true)">Atualizar</button>
+                <button type="button" class="btn-meus-cartoes" onclick="abrirModalCartoes()">
+                    Meus Cartões
+                </button>
             </div>
-            <div id="feedbackCartoesAssinatura" class="cartoes-feedback" role="status" aria-live="polite"></div>
-            <div id="listaCartoesAssinatura">
+            <div id="feedbackCartoesSecao" class="cartoes-feedback"></div>
+            <div id="listaCartoesSecao">
                 <div class="cartoes-vazio">Carregando cartões...</div>
             </div>
         </section>
+
+        <div id="modalMeusCartoes" class="modal-cartoes-backdrop" onclick="fecharModalCartoesBackdrop(event)">
+            <div class="modal-cartoes-box" role="dialog" aria-modal="true" aria-labelledby="tituloMeusCartoes">
+                <div class="modal-cartoes-topo">
+                    <h3 id="tituloMeusCartoes">Meus Cartões</h3>
+                    <button type="button" class="btn-fechar-cartoes" onclick="fecharModalCartoes()" aria-label="Fechar">&times;</button>
+                </div>
+                <div id="feedbackMeusCartoes" class="cartoes-feedback"></div>
+                <div id="listaMeusCartoes">
+                    <div class="cartoes-vazio">Carregando cartões...</div>
+                </div>
+            </div>
+        </div>
 
         <br>
         <a href="/" class="btn-voltar">Voltar ao Início</a>
@@ -1261,26 +341,26 @@
         }
 
         function _mostrarFeedbackCartoes(mensagem, tipo) {
-            const el = document.getElementById("feedbackCartoesAssinatura");
-            if (!el) return;
-            if (!mensagem) {
-                el.className = "cartoes-feedback";
-                el.textContent = "";
-                return;
-            }
-            el.className = `cartoes-feedback ${tipo}`;
-            el.textContent = mensagem;
+            ["feedbackMeusCartoes", "feedbackCartoesSecao"].forEach((id) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                if (!mensagem) {
+                    el.className = "cartoes-feedback";
+                    el.textContent = "";
+                    return;
+                }
+                el.className = `cartoes-feedback ${tipo}`;
+                el.textContent = mensagem;
+            });
         }
 
-        function _renderizarCartoesAssinatura(cartoes) {
-            const lista = document.getElementById("listaCartoesAssinatura");
+        function _renderCartoes(containerId, cartoes) {
+            const lista = document.getElementById(containerId);
             if (!lista) return;
-
             if (!cartoes.length) {
                 lista.innerHTML = '<div class="cartoes-vazio">Você ainda não possui cartões salvos.</div>';
                 return;
             }
-
             lista.innerHTML = cartoes.map((c) => {
                 const mes = c.mes_expiracao ? String(c.mes_expiracao).padStart(2, "0") : "--";
                 const ano = c.ano_expiracao ? String(c.ano_expiracao).slice(-2) : "--";
@@ -1289,13 +369,13 @@
                 const idCartao = Number(c.id);
 
                 return `
-                    <div class="cartao-salvo-item" id="cartao-item-${idCartao}">
+                    <div class="cartao-salvo-item" id="${containerId}-item-${idCartao}">
                         <div>
                             <div class="cartao-salvo-bandeira">${bandeira}</div>
                             <div class="cartao-salvo-numero">&bull;&bull;&bull;&bull; &bull;&bull;&bull;&bull; &bull;&bull;&bull;&bull; ${ultimos4}</div>
-                            <div class="cartao-salvo-validade">Validade: ${_escaparHtml(mes)}/${_escaparHtml(ano)}</div>
+                            <div class="cartao-salvo-validade">Validade: ${mes}/${ano}</div>
                         </div>
-                        <button type="button" class="btn-remover-cartao" onclick="removerCartaoAssinatura(${idCartao}, this)">
+                        <button type="button" class="btn-remover-cartao" onclick="removerMeuCartao(${idCartao}, this)">
                             Remover
                         </button>
                     </div>
@@ -1303,14 +383,14 @@
             }).join("");
         }
 
-        function carregarCartoesAssinatura(mostrarCarregando = true) {
-            const lista = document.getElementById("listaCartoesAssinatura");
-            if (!lista) return;
-            if (mostrarCarregando) {
-                lista.innerHTML = '<div class="cartoes-vazio">Carregando cartões...</div>';
-            }
+        function carregarMeusCartoes() {
+            const containers = ["listaMeusCartoes", "listaCartoesSecao"];
+            containers.forEach((id) => {
+                const el = document.getElementById(id);
+                if (el) el.innerHTML = '<div class="cartoes-vazio">Carregando cartões...</div>';
+            });
 
-            return fetch("/api/meus-cartoes", {
+            fetch("/api/meus-cartoes", {
                 method: "GET",
                 credentials: "same-origin",
                 headers: { "X-Requested-With": "fetch" }
@@ -1322,13 +402,19 @@
                     }
                     return data.cartoes || [];
                 })
-                .then((cartoes) => _renderizarCartoesAssinatura(cartoes))
+                .then((cartoes) => {
+                    containers.forEach((id) => _renderCartoes(id, cartoes));
+                })
                 .catch((err) => {
-                    lista.innerHTML = `<div class="cartoes-vazio">${_escaparHtml(err.message)}</div>`;
+                    const erroHtml = `<div class="cartoes-vazio">${_escaparHtml(err.message)}</div>`;
+                    containers.forEach((id) => {
+                        const el = document.getElementById(id);
+                        if (el) el.innerHTML = erroHtml;
+                    });
                 });
         }
 
-        function removerCartaoAssinatura(cartaoId, botao) {
+        function removerMeuCartao(cartaoId, botao) {
             if (!confirm("Deseja remover este cartão salvo?")) return;
 
             if (botao) botao.disabled = true;
@@ -1348,7 +434,7 @@
                 })
                 .then((data) => {
                     _mostrarFeedbackCartoes(data.mensagem || "Cartão removido.", "ok");
-                    carregarCartoesAssinatura(false);
+                    carregarMeusCartoes();
                 })
                 .catch((err) => {
                     if (botao) botao.disabled = false;
@@ -1356,7 +442,29 @@
                 });
         }
 
-        document.addEventListener("DOMContentLoaded", () => carregarCartoesAssinatura(true));
+        function abrirModalCartoes() {
+            _mostrarFeedbackCartoes("", "");
+            document.getElementById("modalMeusCartoes").classList.add("aberto");
+            carregarMeusCartoes();
+        }
+
+        function fecharModalCartoes() {
+            document.getElementById("modalMeusCartoes").classList.remove("aberto");
+        }
+
+        function fecharModalCartoesBackdrop(event) {
+            if (event.target.id === "modalMeusCartoes") {
+                fecharModalCartoes();
+            }
+        }
+
+        document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape") {
+                fecharModalCartoes();
+            }
+        });
+
+        document.addEventListener("DOMContentLoaded", carregarMeusCartoes);
     </script>
 </body>
 </html>
