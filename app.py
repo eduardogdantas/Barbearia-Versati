@@ -546,6 +546,33 @@ def garantir_tabela_comissoes_pagas():
         print("Aviso: não foi possível garantir a tabela comissoes_pagas:", e)
 
 
+def garantir_tabela_cartoes_salvos():
+    try:
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS cartoes_salvos (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        cliente_id INT NOT NULL,
+                        mp_customer_id VARCHAR(100) NOT NULL,
+                        mp_card_id VARCHAR(100) NOT NULL,
+                        bandeira VARCHAR(40) NOT NULL DEFAULT 'Cartão',
+                        ultimos_4 VARCHAR(4) NOT NULL,
+                        mes_expiracao VARCHAR(2) NULL,
+                        ano_expiracao VARCHAR(4) NULL,
+                        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE KEY uq_cliente_card (cliente_id, mp_card_id),
+                        INDEX idx_cartoes_cliente (cliente_id)
+                    ) ENGINE=InnoDB
+                """)
+                conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:
+        app.logger.error("Aviso: não foi possível garantir cartoes_salvos: %s", e)
+
+
 garantir_coluna_concluido_em()
 garantir_tabela_avaliacoes()
 garantir_agendamento_sem_cadastro()
@@ -555,6 +582,7 @@ garantir_tabela_cadastros_pendentes()
 garantir_colunas_senha_cifrada()
 garantir_tabela_redefinicoes_senha()
 garantir_tabela_pagamentos()
+garantir_tabela_cartoes_salvos()
 app.json_provider_class = CustomJSONProvider
 
 _secret = os.environ.get("FLASK_SECRET_KEY")
@@ -658,6 +686,8 @@ def editar_ou_remover_servico(servico_id):
         return jsonify({'sucesso': False, 'mensagem': 'Erro interno. Tente novamente.'}), 500
     finally:
         conn.close()
+
+
 @app.route('/api/admin/barbeiro/<int:barbeiro_id>/comissoes', methods=['GET', 'POST', 'OPTIONS'])
 @admin_required
 def gerenciar_comissoes_barbeiro(barbeiro_id):
@@ -804,6 +834,8 @@ def gerenciar_horarios_barbeiro(barbeiro_id):
         return jsonify({'sucesso': False, 'mensagem': 'Erro interno.'}), 500
     finally:
         conn.close()
+
+
 # ==============================================================================
 # PAGAMENTOS — o preço SEMPRE vem do banco; o cliente SEMPRE vem da sessão
 # ==============================================================================
@@ -934,6 +966,139 @@ def validar_assinatura_webhook():
     return hmac.compare_digest(esperado, v1)
 
 
+def _salvar_cartao_seguro_mp(cliente_id, email, nome, cpf, token_cartao, payment_info):
+    """Cria/localiza Customer no Mercado Pago, vincula o card_token e salva só metadados seguros."""
+    access_token = (os.environ.get("MERCADO_PAGO_ACCESS_TOKEN") or "").strip()
+    if not access_token or not token_cartao:
+        return
+
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        # 1. Busca cliente existente no Mercado Pago pelo e-mail
+        busca = requests.get(
+            "https://api.mercadopago.com/v1/customers/search",
+            params={"email": email},
+            headers=headers,
+            timeout=15,
+        )
+        customer_id = None
+        if busca.status_code == 200:
+            resultados = (busca.json() or {}).get("results") or []
+            if resultados:
+                customer_id = resultados[0].get("id")
+
+        # 2. Cria Customer caso ainda não exista
+        if not customer_id:
+            partes_nome = nome.strip().split(" ", 1)
+            payload_customer = {
+                "email": email,
+                "first_name": partes_nome[0],
+                "last_name": partes_nome[1] if len(partes_nome) > 1 else "Cliente",
+                "identification": {"type": "CPF", "number": cpf},
+            }
+            cria = requests.post(
+                "https://api.mercadopago.com/v1/customers",
+                json=payload_customer,
+                headers=headers,
+                timeout=15,
+            )
+            if cria.status_code in (200, 201):
+                customer_id = (cria.json() or {}).get("id")
+
+        if not customer_id:
+            return
+
+        # 3. Vincula o token do cartão ao Customer no Mercado Pago (não salva CVV nem número completo)
+        card_resp = requests.post(
+            f"https://api.mercadopago.com/v1/customers/{customer_id}/cards",
+            json={"token": token_cartao},
+            headers=headers,
+            timeout=15,
+        )
+        if card_resp.status_code not in (200, 201):
+            app.logger.warning("Não foi possível salvar cartão no MP: %s", card_resp.text[:250])
+            return
+
+        card_json = card_resp.json() or {}
+        mp_card_id = str(card_json.get("id") or "")
+        ultimos_4 = str(card_json.get("last_four_digits") or (payment_info.get("card") or {}).get("last_four_digits") or "")[-4:]
+        bandeira = str(
+            ((card_json.get("payment_method") or {}).get("name"))
+            or payment_info.get("payment_method_id")
+            or "Cartão"
+        )[:40]
+        mes_exp = str(card_json.get("expiration_month") or "").zfill(2)[:2] if card_json.get("expiration_month") else None
+        ano_exp = str(card_json.get("expiration_year") or "")[:4] if card_json.get("expiration_year") else None
+
+        if not mp_card_id or len(ultimos_4) < 4:
+            return
+
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO cartoes_salvos
+                        (cliente_id, mp_customer_id, mp_card_id, bandeira, ultimos_4, mes_expiracao, ano_expiracao)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                        bandeira = VALUES(bandeira),
+                        ultimos_4 = VALUES(ultimos_4),
+                        mes_expiracao = VALUES(mes_expiracao),
+                        ano_expiracao = VALUES(ano_expiracao)
+                """, (cliente_id, str(customer_id), mp_card_id, bandeira, ultimos_4, mes_exp, ano_exp))
+                conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:
+        app.logger.warning("Falha ao salvar cartão seguro: %s", e)
+
+@app.route("/api/meus-cartoes/<int:cartao_id>", methods=["DELETE"])
+def api_remover_meu_cartao(cartao_id):
+    """Remove um cartão salvo pertencente ao cliente logado."""
+    cliente_id = session.get("cliente_id")
+    if not cliente_id:
+        return jsonify({"sucesso": False, "mensagem": "Não autenticado"}), 401
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT mp_customer_id, mp_card_id FROM cartoes_salvos WHERE id = %s AND cliente_id = %s",
+                (cartao_id, int(cliente_id)),
+            )
+            cartao = cursor.fetchone()
+            if not cartao:
+                return jsonify({"sucesso": False, "mensagem": "Cartão não encontrado."}), 404
+
+            access_token = (os.environ.get("MERCADO_PAGO_ACCESS_TOKEN") or "").strip()
+            if access_token and cartao.get("mp_customer_id") and cartao.get("mp_card_id"):
+                try:
+                    requests.delete(
+                        f"https://api.mercadopago.com/v1/customers/{cartao['mp_customer_id']}/cards/{cartao['mp_card_id']}",
+                        headers={"Authorization": f"Bearer {access_token}"},
+                        timeout=15,
+                    )
+                except Exception as mp_err:
+                    app.logger.warning("Falha ao remover cartão no Mercado Pago: %s", mp_err)
+
+            cursor.execute(
+                "DELETE FROM cartoes_salvos WHERE id = %s AND cliente_id = %s",
+                (cartao_id, int(cliente_id)),
+            )
+            conn.commit()
+
+        return jsonify({"sucesso": True, "mensagem": "Cartão removido com sucesso!"}), 200
+    except Exception as e:
+        conn.rollback()
+        app.logger.error("Erro em api_remover_meu_cartao: %s", e)
+        return jsonify({"sucesso": False, "mensagem": "Erro interno ao remover cartão."}), 500
+    finally:
+        conn.close()
+
 @app.route("/api/pagamento/cartao", methods=["POST"])
 @rate_limit(10, 300, "pagamento")
 def processar_pagamento_cartao():
@@ -1025,6 +1190,7 @@ def processar_pagamento_cartao():
                     conn.commit()
             finally:
                 conn.close()
+            _salvar_cartao_seguro_mp(cliente_id, email, nome, cpf, token_cartao, payment)
 
             return jsonify({
                 "sucesso": True,
@@ -1049,6 +1215,7 @@ def processar_pagamento_cartao():
     except Exception as e:
         app.logger.error("Erro em processar_pagamento_cartao: %s", e)
         return jsonify({"sucesso": False, "mensagem": "Erro interno. Tente novamente."}), 500
+
 
 @app.route('/api/admin/cancelar-assinatura', methods=['POST'])
 @admin_required
@@ -1087,13 +1254,6 @@ def admin_cancelar_assinatura():
 # ==============================================================================
 # ROTAS DE PLANOS DE ASSINATURA (CATÁLOGO — NOME/PREÇO/DESCRIÇÃO)
 # ==============================================================================
-# ==============================================================================
-# ROTAS DE PLANOS DE ASSINATURA (CATÁLOGO — NOME/PREÇO/DESCRIÇÃO)
-# ==============================================================================
-
-# ==============================================================================
-# ROTAS DE PLANOS DE ASSINATURA (CATÁLOGO — NOME/PREÇO/DESCRIÇÃO)
-# ==============================================================================
 
 @app.route('/api/planos', methods=['GET'])
 def listar_planos_site():
@@ -1114,6 +1274,8 @@ def listar_planos_site():
         return jsonify({'sucesso': False, 'planos': [], 'mensagem': 'Erro interno.'}), 500
     finally:
         conn.close()
+
+
 # ==============================================================================
 # CONSULTA DE ASSINATURA E CARTÕES DO CLIENTE (PARA O MODAL DO SITE)
 # ==============================================================================
@@ -1146,7 +1308,7 @@ def api_minha_assinatura():
             val_preco = float(assinatura.get("preco") or 0.0)
             preco_fmt = f"R$ {val_preco:.2f}".replace('.', ',')
 
-            # Formata as datas directamente no Python sem conflito com o PyMySQL
+            # Formata as datas diretamente no Python sem conflito com o PyMySQL
             dt_inicio = assinatura.get("data_inicio")
             inicio_fmt = dt_inicio.strftime("%d/%m/%Y") if hasattr(dt_inicio, "strftime") else str(dt_inicio or "--/--/----")
 
@@ -1178,13 +1340,29 @@ def api_minha_assinatura():
 
 @app.route("/api/meus-cartoes", methods=["GET"])
 def api_meus_cartoes():
-    """Rota consumida pelo modal para listar os cartões guardados."""
+    """Lista apenas os metadados não sensíveis dos cartões salvos do cliente."""
     cliente_id = session.get("cliente_id")
     if not cliente_id:
         return jsonify({"sucesso": False, "cartoes": []}), 401
 
-    # Devolve lista vazia caso ainda não tenha tabela de cartões guardados, evitando erro 404
-    return jsonify({"sucesso": True, "cartoes": []}), 200
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT id, bandeira, ultimos_4, mes_expiracao, ano_expiracao
+                FROM cartoes_salvos
+                WHERE cliente_id = %s
+                ORDER BY id DESC
+            """, (int(cliente_id),))
+            cartoes = cursor.fetchall()
+        return jsonify({"sucesso": True, "cartoes": cartoes}), 200
+    except Exception as e:
+        app.logger.error("Erro em api_meus_cartoes: %s", e)
+        return jsonify({"sucesso": False, "cartoes": [], "mensagem": "Erro interno."}), 500
+    finally:
+        conn.close()
+
+
 @app.route("/minha-assinatura", methods=["GET"])
 def pagina_minha_assinatura():
     if "cliente_id" not in session:
@@ -1218,6 +1396,7 @@ def pagina_minha_assinatura():
         assinaturas=assinaturas,
         cliente_nome=session.get("cliente_nome")
     )
+
 
 @app.route('/api/admin/planos', methods=['GET', 'POST'])
 @admin_required
@@ -1351,6 +1530,7 @@ def listar_servicos_site():
     finally:
         conn.close()
 
+
 @app.route("/api/admin/agendamento/<int:id>/concluir", methods=["POST"])
 @admin_required
 def api_concluir_agendamento(id):
@@ -1369,6 +1549,7 @@ def api_concluir_agendamento(id):
         return jsonify({"sucesso": False, "mensagem": "Erro interno. Tente novamente."}), 500
     finally:
         conn.close()
+
 
 @app.route("/api/admin/financeiro", methods=["GET"])
 @admin_required
@@ -1394,6 +1575,7 @@ def api_admin_financeiro():
         return jsonify({"sucesso": False, "total_cortes": 0, "valor_total": 0.0, "mensagem": "Erro interno. Tente novamente."}), 500
     finally:
         conn.close()
+
 
 @app.route("/api/admin/agenda-equipe", methods=["GET"])
 @admin_required
@@ -1505,6 +1687,7 @@ def api_admin_historico():
         return jsonify({"sucesso": False, "historico": [], "mensagem": "Erro interno. Tente novamente."}), 500
     finally:
         conn.close()
+
 
 @app.route('/api/barbeiros/<int:barbeiro_id>/agendamentos', methods=['GET'])
 def api_agendamentos_por_barbeiro(barbeiro_id):
@@ -1651,6 +1834,7 @@ def gerenciar_barbeiros():
     finally:
         conn.close()
 
+
 def barbearia_compativel(lista):
     return lista
 
@@ -1739,8 +1923,6 @@ def deletar_barbeiro(barbeiro_id):
 DIAS_SEMANA_NOMES = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado']
 
 
-
-
 @app.route('/api/produtos', methods=['GET'])
 def listar_produtos_site():
     conn = get_db_connection()
@@ -1758,6 +1940,7 @@ def listar_produtos_site():
             return jsonify({'sucesso': True, 'produtos': produtos}), 200
     finally:
         conn.close()
+
 
 @app.route('/api/admin/produtos', methods=['GET', 'POST'])
 @admin_required
@@ -1847,6 +2030,7 @@ def listar_combos_site():
     finally:
         conn.close()
 
+
 @app.route('/api/admin/combos', methods=['GET', 'POST'])
 @admin_required
 def gerenciar_combos():
@@ -1888,9 +2072,6 @@ def gerenciar_combos():
         return jsonify({'sucesso': False, 'mensagem': 'Erro interno. Tente novamente.'}), 500
     finally:
         conn.close()
-
-
-
 
 
 @app.route('/api/admin/combos/<int:combo_id>', methods=['DELETE'])
@@ -1946,6 +2127,7 @@ def gerenciar_servicos():
         return jsonify({'sucesso': False, 'mensagem': 'Erro interno. Tente novamente.'}), 500
     finally:
         conn.close()
+
 
 @app.route("/api/pagamento/pix", methods=["POST"])
 @rate_limit(10, 300, "pagamento")
@@ -2095,6 +2277,7 @@ def webhook_mercadopago():
 
     return jsonify({"status": "ok"}), 200
 
+
 @app.route("/api/assinaturas/cancelar/<int:assinatura_id>", methods=["POST"])
 def cancelar_assinatura_cliente(assinatura_id):
     cliente_id = session.get("cliente_id")
@@ -2127,6 +2310,7 @@ def cancelar_assinatura_cliente(assinatura_id):
         return jsonify({"sucesso": True, "mensagem": "Assinatura cancelada com sucesso!"}), 200
     finally:
         conn.close()
+
 
 @app.route("/api/login", methods=["POST"])
 @rate_limit(10, 300, "login-api")
@@ -2453,7 +2637,8 @@ def api_admin_usuarios():
         return jsonify({"sucesso": False, "usuarios": [], "mensagem": "Erro interno. Tente novamente."}), 500
     finally:
         conn.close()
-        
+
+
 @app.route("/api/admin/usuarios", methods=["POST"])
 @admin_required
 def api_admin_criar_usuario():
@@ -2560,6 +2745,7 @@ def api_admin_resetar_senha():
         return jsonify({'sucesso': False, 'mensagem': 'Erro ao alterar senha.'}), 500
     finally:
         conn.close()
+
 
 @app.route("/api/admin/login", methods=["POST"])
 @rate_limit(5, 300, "admin-login")
@@ -3324,6 +3510,7 @@ def api_admin_cancelar_agendamento(id):
     finally:
         conn.close()
 
+
 @app.route("/checkout-plano", methods=["GET"])
 def checkout_plano():
     if "cliente_id" not in session:
@@ -3363,6 +3550,8 @@ def pagina_planos():
         cliente_id=session.get("cliente_id"),
         cliente_nome=session.get("cliente_nome")
     )
+
+
 @app.route('/api/admin/planos-ativos', methods=['GET'])
 @admin_required
 def admin_planos_ativos():
@@ -3440,6 +3629,8 @@ def admin_planos_ativos():
         return jsonify({'sucesso': False, 'planos': [], 'mensagem': 'Erro interno.'}), 500
     finally:
         conn.close()
+
+
 @app.route('/api/admin/cobrar-assinatura', methods=['POST'])
 @admin_required
 def admin_cobrar_assinatura():
@@ -3505,6 +3696,7 @@ def admin_cobrar_assinatura():
         return jsonify({'sucesso': False, 'mensagem': 'Erro interno. Tente novamente.'}), 500
     finally:
         conn.close()
+
 
 @app.route("/api/assinaturas/assinar", methods=["POST"])
 @rate_limit(20, 300, "assinar")
@@ -3626,6 +3818,7 @@ def cadastro():
             erro = msg
 
     return render_template('cadastro.html', erro=erro)
+
 
 @app.route("/verificar-email", methods=["GET", "POST"])
 @rate_limit(15, 600, "verificar-web")
@@ -3840,7 +4033,7 @@ def redefinir_senha():
             ok, msg, _status = _confirmar_redefinicao_senha(email, request.form.get("codigo"), nova)
             if ok:
                 session.pop("reset_email", None)
-                return render_template("login.html", erro=None) # ou redirecionar com mensagem de sucesso
+                return render_template("login.html", erro=None)
             erro = msg
         aviso = None
 
@@ -3972,6 +4165,7 @@ def agendar():
 
     return render_template("agendar.html", erro=erro, tem_assinatura=tem_assinatura, barbeiros=barbeiros)
 
+
 @app.route('/api/admin/agendamento/<int:agendamento_id>/concluir', methods=['POST'])
 @admin_required
 def concluir_agendamento(agendamento_id):
@@ -3990,6 +4184,8 @@ def concluir_agendamento(agendamento_id):
         return jsonify({'sucesso': False, 'mensagem': 'Erro ao atualizar status.'}), 500
     finally:
         conn.close()
+
+
 @app.route("/meus-agendamentos")
 def meus_agendamentos():
     if "cliente_id" not in session:
@@ -4178,6 +4374,8 @@ def api_cliente_agendamentos():
             return jsonify({'sucesso': True, 'agendamentos': agendamentos}), 200
     finally:
         conn.close()
+
+
 @app.route("/api/admin/agendamentos/<int:id>/cancelar", methods=["POST", "PUT", "OPTIONS"])
 @admin_required
 def api_admin_cancelar_agendamento_status(id):
@@ -4200,7 +4398,9 @@ def api_admin_cancelar_agendamento_status(id):
         app.logger.error("Erro em api_admin_cancelar_agendamento_status: %s", e)
         return jsonify({"sucesso": False, "mensagem": "Erro interno. Tente novamente."}), 500
     finally:
-        conn.close()  
+        conn.close()
+
+
 @app.route("/api/horarios-disponiveis")
 def horarios_disponiveis():
     barbeiro_id = parse_int(request.args.get("barbeiro_id", "1"), 1)
@@ -4239,8 +4439,6 @@ def horarios_disponiveis():
     return jsonify(livres)
 
 
-
-
 @app.route("/sair")
 def sair():
     session.clear()
@@ -4254,6 +4452,7 @@ def internal_error(error):
         "sucesso": False,
         "mensagem": "Erro interno no servidor. Tente novamente mais tarde."
     }), 500
+
 
 @app.errorhandler(413)
 def payload_grande(error):
